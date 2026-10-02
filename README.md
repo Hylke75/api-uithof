@@ -80,9 +80,10 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync
   Appconnex (AFAS) maakt iemand in SEM een batch aan. Die batch (debiteuren, journaalposten en
   facturen) wordt via de API opgehaald. Betalingen kunnen optioneel teruggeschreven worden, bij
   de volgende batch. Kostenplaats en kostendrager komen mee uit SEM.
-  → Mogelijk is "batches ophalen" de juiste bron in plaats van "facturen op datum". Elke batch
-  wordt dan precies één keer verwerkt, en dat voorkomt dubbele boekingen. Open vraag: kan een
-  batch ook via de API *aangemaakt* worden, zodat het volledig automatisch gaat?
+  → **Niet van toepassing voor De Uithof:** er is geen export-batch in SEM. De sync haalt dus
+  de facturen zelf op. Een geboekte factuur wordt nooit opnieuw geboekt, omdat facturen uniek
+  zijn op SEM-id. Daarom is het belangrijk dat de SEM-API kan filteren op "gewijzigd/aangemaakt
+  sinds", zodat laat ingevoerde facturen niet gemist worden.
 
 ### CASH
 
@@ -106,12 +107,11 @@ SOAP of REST wordt, verandert dus niets aan de sync-logica.
 - [ ] Toegang tot de SEM-documentatie (domein toestaan in het netwerkbeleid, of de pagina's aanleveren)
 - [ ] CASH: administratie van De Uithof koppelen aan de API-gebruiker
 - [ ] CASH: WSDL / API 4.0-documentatie en recordindeling opvragen bij CASH-support
-- [ ] SEM: verwerken we per batch of per factuur? Kan een batch via de API aangemaakt worden?
 - [ ] Toegang: SEM-login, CASH-API-key, testadministratie in CASH
 - [ ] Mapping: grootboekrekening en btw-code (en eventueel kostenplaats) per omzetsoort
 - [ ] Strategie voor de koppeling van debiteuren (SEM-klant ↔ CASH-debiteurnummer; nieuwe debiteuren automatisch aanmaken?)
-- [ ] Startdatum en eerste batch
-- [ ] Wat zit er in een batch: facturen, creditnota's, proforma's? (Proforma's worden nu niet ondersteund)
+- [ ] Startdatum: eerste factuurdatum die niet meer handmatig in CASH komt
+- [ ] Welke documenten moeten mee: facturen, creditnota's, proforma's? (Proforma's worden nu niet ondersteund)
 - [ ] Moeten betalingen en afletteren mee?
 - [ ] Kan SEM filteren op "gewijzigd sinds"? Dat is betrouwbaarder dan filteren op factuurdatum
 - [ ] Ondersteunt CASH een duplicaatcontrole of idempotentiesleutel (bijvoorbeeld op factuurnummer)? Zo is een time-out veilig af te handelen
