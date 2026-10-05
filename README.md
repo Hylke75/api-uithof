@@ -80,10 +80,14 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync
   Appconnex (AFAS) maakt iemand in SEM een batch aan. Die batch (debiteuren, journaalposten en
   facturen) wordt via de API opgehaald. Betalingen kunnen optioneel teruggeschreven worden, bij
   de volgende batch. Kostenplaats en kostendrager komen mee uit SEM.
-  → **Niet van toepassing voor De Uithof:** er is geen export-batch in SEM. De sync haalt dus
-  de facturen zelf op. Een geboekte factuur wordt nooit opnieuw geboekt, omdat facturen uniek
-  zijn op SEM-id. Daarom is het belangrijk dat de SEM-API kan filteren op "gewijzigd/aangemaakt
-  sinds", zodat laat ingevoerde facturen niet gemist worden.
+  → **Bevestigd door SEM (5 oktober 2026):** de API heeft batches. De Uithof heeft nog geen
+  export-batch ingericht.
+  - Batches ophalen: https://support.smarteventmanager.com/api/html/d775c78a-ca3b-486f-76b3-2398c5cf70ef.htm
+  - Facturen uit een batch ophalen: https://support.smarteventmanager.com/api/html/fe256f44-ff48-a9e1-5821-cbc2dfacd93a.htm
+  - Omgeving De Uithof: `https://deuithof.smarteventmanager.com`
+
+  Waarschijnlijk werkt de sync dan per batch: nieuwe batches ophalen, de facturen per batch
+  verwerken en elke batch maar één keer boeken. Dat volgt zodra we de documentatie kunnen lezen.
 
 ### CASH
 
@@ -105,6 +109,7 @@ SOAP of REST wordt, verandert dus niets aan de sync-logica.
 ## Openstaande punten
 
 - [ ] Toegang tot de SEM-documentatie (domein toestaan in het netwerkbeleid, of de pagina's aanleveren)
+- [ ] SEM: wie maakt de batches aan, en hoe vaak? Of kan dat automatisch / via de API?
 - [ ] CASH: administratie van De Uithof koppelen aan de API-gebruiker
 - [ ] CASH: WSDL / API 4.0-documentatie en recordindeling opvragen bij CASH-support
 - [ ] Toegang: SEM-login, CASH-API-key, testadministratie in CASH
