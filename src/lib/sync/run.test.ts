@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { CashBoeking, CashClient } from "@/lib/cash/client";
-import type { SemFactuur } from "@/lib/sem/client";
-import { contentHash } from "./hash";
+import type { SemBatch, SemClient, SemInvoice, SemJournaalpost } from "@/lib/sem/client";
 import type { Mappings } from "./mapping";
 import { runSync } from "./run";
 import type { FactuurRow, SyncStore } from "./store";
 
 function memoryStore(mappings: Mappings, vorigeWindowTo: string | null = null) {
   const facturen = new Map<string, FactuurRow>();
+  const batches = new Map<number, { nFacturen: number; fout: string | null }>();
   const runs: Record<string, unknown>[] = [];
   const store: SyncStore = {
     async laatsteVoltooideRun() {
@@ -31,33 +31,68 @@ function memoryStore(mappings: Mappings, vorigeWindowTo: string | null = null) {
     async upsertFactuur(row) {
       facturen.set(row.sem_factuur_id, { ...facturen.get(row.sem_factuur_id), ...row });
     },
+    async upsertBatch({ batch, nFacturen, fout }) {
+      batches.set(batch.BatchNumber, { nFacturen, fout });
+    },
     async laadMappings() {
       return mappings;
     },
   };
-  return { store, facturen, runs };
+  return { store, facturen, batches, runs };
 }
 
 const mappings: Mappings = {
-  omzetsoort: new Map([
-    ["ZAALHUUR", { grootboekrekening: "8000", btwCode: "H", actief: true }],
-    ["CATERING", { grootboekrekening: "8100", btwCode: "L", kostenplaats: "KP1", actief: true }],
+  grootboek: new Map([["8100", { grootboekrekening: "8150", actief: true }]]),
+  btwCode: new Map([
+    ["Hoog", "2"],
+    ["Laag", "1"],
   ]),
-  debiteur: new Map([["K1", "10001"]]),
+  debiteur: new Map(),
 };
 
-const factuur = (over: Partial<SemFactuur> = {}): SemFactuur => ({
-  id: "F1",
-  factuurnummer: "2026-0001",
-  factuurdatum: "2026-09-30",
-  soort: "factuur",
-  debiteurId: "K1",
-  regels: [
-    { omzetsoort: "ZAALHUUR", omschrijving: "Zaal A", bedragExclCents: 100000, btwCents: 21000 },
-    { omzetsoort: "CATERING", omschrijving: "Lunch", bedragExclCents: 5000, btwCents: 450 },
-  ],
-  ...over,
-});
+/** Eén batch met één factuur (2 omzetregels), zoals SEM hem levert. */
+function semMet(opts: { totaalIn?: number; extra?: Partial<SemJournaalpost>; factuurdatum?: string; falen?: boolean } = {}) {
+  const datum = opts.factuurdatum ?? "2026-09-30T00:00:00";
+  const regel = (id: number, acc: number, ex: number, tax: number, code: string): SemJournaalpost => ({
+    JournalEntryID: id,
+    BatchNumber: 41,
+    CompanyCode: null,
+    InvoiceID: 1877,
+    InvoiceNumber: 10319,
+    InvoiceDate: datum,
+    DebtorNumber: "10001",
+    InvoiceLineID: id,
+    InvoiceLineDescription: `Regel ${id}`,
+    AccountCode: acc,
+    DebitAmount: 0,
+    CreditAmount: ex,
+    BaseAmount: ex,
+    TaxAmount: tax,
+    AmountInclusiveTax: ex + tax,
+    IsAmountInclusiveTax: false,
+    TaxCode: code,
+    TaxPercentage: null,
+    CostCenterCode: null,
+    CostUnitCode: null,
+    ...opts.extra,
+  });
+  const kop: SemInvoice = { InvoiceID: 1877, Number: 10319, InvoiceDate: datum, DebtorNumber: "10001", TotalAmountEx: 1050, TotalAmountIn: opts.totaalIn ?? 1264.5 };
+  const vensters: string[] = [];
+  const sem: SemClient = {
+    async fetchBatches(from) {
+      vensters.push(from);
+      if (opts.falen) throw new Error("SEM down");
+      return [{ BatchNumber: 41, CompanyCode: null, CompanyID: 1, CreatedAt: null, Name: "Week 40" } satisfies SemBatch];
+    },
+    async fetchJournaalposten() {
+      return [regel(1, 8000, 1000, 210, "Hoog"), regel(2, 8100, 50, 4.5, "Laag")];
+    },
+    async fetchFacturen() {
+      return [kop];
+    },
+  };
+  return { sem, vensters };
+}
 
 function cashSpy(fail = false) {
   const geboekt: CashBoeking[] = [];
@@ -75,63 +110,64 @@ const basis = { startDate: "2026-01-01", administratie: "TEST", trigger: "cron" 
 
 describe("runSync", () => {
   it("boekt niets in proefmodus maar legt de boeking vast", async () => {
-    const { store, facturen } = memoryStore(mappings);
+    const { store, facturen, batches } = memoryStore(mappings);
     const cash = cashSpy();
-    const r = await runSync({ ...basis, store, sem: { fetchFacturen: async () => [factuur()] }, cash: cash.client, dryRun: true });
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: true });
 
-    expect(r).toMatchObject({ status: "success", n_opgehaald: 1, n_proef: 1, n_geboekt: 0 });
+    expect(r).toMatchObject({ status: "success", n_batches: 1, n_opgehaald: 1, n_proef: 1, n_geboekt: 0 });
     expect(cash.geboekt).toHaveLength(0);
-    const row = facturen.get("F1")!;
-    expect(row.status).toBe("proef");
-    expect(row.totaal_incl_cents).toBe(126450);
-    expect((row.cash_payload as CashBoeking).regels[1]).toMatchObject({ grootboekrekening: "8100", kostenplaats: "KP1" });
+    expect(batches.get(41)).toEqual({ nFacturen: 1, fout: null });
+    const row = facturen.get("1877")!;
+    expect(row).toMatchObject({ status: "proef", factuurnummer: "10319", sem_batch_number: 41, totaal_incl_cents: 126450 });
+    const boeking = row.cash_payload as CashBoeking;
+    expect(boeking.debiteurnummer).toBe("10001");
+    expect(boeking.regels.map((x) => [x.grootboekrekening, x.btwCode])).toEqual([
+      ["8000", "2"],
+      ["8150", "1"],
+    ]);
   });
 
   it("boekt live en boekt een geboekte factuur nooit opnieuw", async () => {
     const { store, facturen } = memoryStore(mappings);
     const cash = cashSpy();
-    const sem = { fetchFacturen: async () => [factuur()] };
+    const { sem } = semMet();
 
     await runSync({ ...basis, store, sem, cash: cash.client, dryRun: false });
     const tweede = await runSync({ ...basis, store, sem, cash: cash.client, dryRun: false });
 
     expect(cash.geboekt).toHaveLength(1);
-    expect(facturen.get("F1")).toMatchObject({ status: "geboekt", cash_boeking_id: "B1" });
+    expect(facturen.get("1877")).toMatchObject({ status: "geboekt", cash_boeking_id: "B1" });
     expect(tweede).toMatchObject({ n_overgeslagen: 1, n_geboekt: 0 });
   });
 
   it("markeert een factuur die na boeking in SEM gewijzigd is", async () => {
     const { store, facturen } = memoryStore(mappings);
     const cash = cashSpy();
-    await runSync({ ...basis, store, sem: { fetchFacturen: async () => [factuur()] }, cash: cash.client, dryRun: false });
+    await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: false });
 
-    const gewijzigd = factuur({ debiteurNaam: "Andere naam" });
-    const r = await runSync({ ...basis, store, sem: { fetchFacturen: async () => [gewijzigd] }, cash: cash.client, dryRun: false });
+    const r = await runSync({ ...basis, store, sem: semMet({ extra: { CostCenterCode: "2000" } }).sem, cash: cash.client, dryRun: false });
 
     expect(cash.geboekt).toHaveLength(1);
     expect(r.status).toBe("partial");
-    expect(facturen.get("F1")!.status).toBe("gewijzigd_na_boeking");
-    expect(facturen.get("F1")!.cash_boeking_id).toBe("B1");
+    expect(facturen.get("1877")).toMatchObject({ status: "gewijzigd_na_boeking", cash_boeking_id: "B1" });
   });
 
-  it("meldt ontbrekende mappings zonder te boeken", async () => {
-    const { store, facturen } = memoryStore(mappings);
+  it("boekt niet als de totalen niet kloppen of een btw-mapping ontbreekt", async () => {
+    const { store, facturen } = memoryStore({ ...mappings, btwCode: new Map([["Hoog", "2"]]) });
     const cash = cashSpy();
-    const f = factuur({ debiteurId: "ONBEKEND", regels: [{ omzetsoort: "NIEUW", omschrijving: "x", bedragExclCents: 100, btwCents: 21 }] });
-    const r = await runSync({ ...basis, store, sem: { fetchFacturen: async () => [f] }, cash: cash.client, dryRun: false });
+    const r = await runSync({ ...basis, store, sem: semMet({ totaalIn: 1300 }).sem, cash: cash.client, dryRun: false });
 
     expect(r).toMatchObject({ status: "partial", n_fout: 1 });
     expect(cash.geboekt).toHaveLength(0);
-    expect(facturen.get("F1")!.foutmelding).toContain("ONBEKEND");
-    expect(facturen.get("F1")!.foutmelding).toContain("NIEUW");
+    expect(facturen.get("1877")!.foutmelding).toContain("wijkt af van het factuurtotaal");
+    expect(facturen.get("1877")!.foutmelding).toContain('SEM-btw-code "Laag"');
   });
 
   it("boekt niet opnieuw als de uitkomst van een eerdere boekpoging onbekend is", async () => {
     const { store, facturen } = memoryStore(mappings);
-    const f = factuur();
-    facturen.set("F1", { status: "nieuw", content_hash: contentHash(f) } as FactuurRow);
+    facturen.set("1877", { status: "nieuw", content_hash: "x" } as FactuurRow);
     const cash = cashSpy();
-    const r = await runSync({ ...basis, store, sem: { fetchFacturen: async () => [f] }, cash: cash.client, dryRun: false });
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: false });
 
     expect(cash.geboekt).toHaveLength(0);
     expect(r.n_fout).toBe(1);
@@ -139,37 +175,33 @@ describe("runSync", () => {
 
   it("registreert een CASH-fout per factuur en gaat door", async () => {
     const { store, facturen } = memoryStore(mappings);
-    const r = await runSync({ ...basis, store, sem: { fetchFacturen: async () => [factuur()] }, cash: cashSpy(true).client, dryRun: false });
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cashSpy(true).client, dryRun: false });
 
     expect(r.status).toBe("partial");
-    expect(facturen.get("F1")).toMatchObject({ status: "fout", foutmelding: "CASH: timeout" });
+    expect(facturen.get("1877")).toMatchObject({ status: "fout", foutmelding: "CASH: timeout" });
+  });
+
+  it("slaat facturen van vóór de startdatum over", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    const r = await runSync({ ...basis, store, sem: semMet({ factuurdatum: "2025-12-31T00:00:00" }).sem, cash: cashSpy().client, dryRun: true });
+
+    expect(r).toMatchObject({ status: "success", n_overgeslagen: 1, n_proef: 0 });
+    expect(facturen.size).toBe(0);
   });
 
   it("zet de run op failed als SEM niet bereikbaar is", async () => {
     const { store, runs } = memoryStore(mappings);
-    const r = await runSync({
-      ...basis,
-      store,
-      sem: { fetchFacturen: async () => { throw new Error("SEM down"); } },
-      cash: cashSpy().client,
-      dryRun: true,
-    });
+    const r = await runSync({ ...basis, store, sem: semMet({ falen: true }).sem, cash: cashSpy().client, dryRun: true });
     expect(r).toMatchObject({ status: "failed", error: "SEM down" });
     expect(runs[0]).toMatchObject({ status: "failed", error: "SEM down" });
   });
 
-  it("bepaalt het venster met terugkijkperiode, maar nooit vóór de startdatum", async () => {
-    const vensters: [string, string][] = [];
-    const sem = { fetchFacturen: async (from: string, to: string) => (vensters.push([from, to]), []) };
+  it("haalt batches op vanaf de vorige run min de terugkijkperiode, maar nooit vóór de startdatum", async () => {
+    const a = semMet();
+    await runSync({ ...basis, store: memoryStore(mappings, "2026-10-01").store, sem: a.sem, cash: cashSpy().client, dryRun: true });
+    await runSync({ ...basis, startDate: "2026-09-28", store: memoryStore(mappings, "2026-10-01").store, sem: a.sem, cash: cashSpy().client, dryRun: true });
+    await runSync({ ...basis, store: memoryStore(mappings).store, sem: a.sem, cash: cashSpy().client, dryRun: true });
 
-    await runSync({ ...basis, store: memoryStore(mappings, "2026-10-01").store, sem, cash: cashSpy().client, dryRun: true });
-    await runSync({ ...basis, startDate: "2026-09-28", store: memoryStore(mappings, "2026-10-01").store, sem, cash: cashSpy().client, dryRun: true });
-    await runSync({ ...basis, store: memoryStore(mappings).store, sem, cash: cashSpy().client, dryRun: true });
-
-    expect(vensters).toEqual([
-      ["2026-09-24", "2026-10-02"],
-      ["2026-09-28", "2026-10-02"],
-      ["2026-01-01", "2026-10-02"],
-    ]);
+    expect(a.vensters).toEqual(["2026-09-24", "2026-09-28", "2026-01-01"]);
   });
 });

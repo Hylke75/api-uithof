@@ -20,7 +20,7 @@ export default async function Beheer() {
     sb.from("sync_runs").select("*").order("started_at", { ascending: false }).limit(20),
     sb
       .from("sem_facturen")
-      .select("factuurnummer, factuurdatum, sem_debiteur_id, totaal_incl_cents, status, foutmelding")
+      .select("factuurnummer, factuurdatum, sem_debiteurnummer, sem_batch_number, totaal_incl_cents, status, foutmelding")
       .in("status", ["fout", "gewijzigd_na_boeking", "nieuw"])
       .order("factuurdatum", { ascending: false })
       .limit(100),
@@ -31,7 +31,7 @@ export default async function Beheer() {
   return (
     <main>
       <h1>Uithof facturensync</h1>
-      <p className="muted">Smart Event Manager → CASH, elke nacht om 01:00 UTC.</p>
+      <p className="muted">Smart Event Manager → CASH, elke nacht om 01:00 UTC. Verwerkt de journaalpostbatches die in SEM zijn aangemaakt.</p>
 
       <div className={`banner ${dryRun ? "proef" : "live"}`}>
         {dryRun
@@ -55,6 +55,7 @@ export default async function Beheer() {
               <tr>
                 <th>Factuur</th>
                 <th>Datum</th>
+                <th>Batch</th>
                 <th>Debiteur (SEM)</th>
                 <th className="num">Bedrag incl.</th>
                 <th>Status</th>
@@ -66,7 +67,8 @@ export default async function Beheer() {
                 <tr key={f.factuurnummer}>
                   <td>{f.factuurnummer}</td>
                   <td>{f.factuurdatum}</td>
-                  <td>{f.sem_debiteur_id}</td>
+                  <td>{f.sem_batch_number}</td>
+                  <td>{f.sem_debiteurnummer}</td>
                   <td className="num">{euro.format(f.totaal_incl_cents / 100)}</td>
                   <td className={`s-${f.status}`}>{f.status}</td>
                   <td className="wrap">{f.foutmelding}</td>
@@ -89,7 +91,8 @@ export default async function Beheer() {
                 <th>Status</th>
                 <th>Modus</th>
                 <th>Venster</th>
-                <th className="num">Opgehaald</th>
+                <th className="num">Batches</th>
+                <th className="num">Facturen</th>
                 <th className="num">Geboekt</th>
                 <th className="num">Proef</th>
                 <th className="num">Overgeslagen</th>
@@ -104,12 +107,13 @@ export default async function Beheer() {
                   <td className={`s-${r.status}`}>{r.status}</td>
                   <td>{r.dry_run ? "proef" : "live"}{r.trigger === "handmatig" ? " (handmatig)" : ""}</td>
                   <td>{r.window_from} – {r.window_to}</td>
+                  <td className="num">{r.n_batches}</td>
                   <td className="num">{r.n_opgehaald}</td>
                   <td className="num">{r.n_geboekt}</td>
                   <td className="num">{r.n_proef}</td>
                   <td className="num">{r.n_overgeslagen}</td>
                   <td className="num">{r.n_fout}</td>
-                  <td className="wrap">{r.error}</td>
+                  <td className="wrap pre">{r.error}</td>
                 </tr>
               ))}
             </tbody>

@@ -9,6 +9,7 @@ export interface CashBoekingRegel {
   grootboekrekening: string;
   btwCode: string;
   kostenplaats?: string;
+  kostendrager?: string;
   omschrijving: string;
   bedragExclCents: number;
   btwCents: number;

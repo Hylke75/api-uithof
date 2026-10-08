@@ -1,16 +1,17 @@
 import type { CashBoeking } from "@/lib/cash/client";
 import type { SemFactuur } from "@/lib/sem/client";
 
-export interface OmzetsoortMapping {
+export interface GrootboekMapping {
   grootboekrekening: string;
-  btwCode: string;
-  kostenplaats?: string | null;
   actief: boolean;
 }
 
 export interface Mappings {
-  omzetsoort: Map<string, OmzetsoortMapping>;
-  /** SEM-debiteur-id -> CASH-debiteurnummer */
+  /** SEM-grootboek -> CASH-grootboek. Zonder rij wordt het SEM-nummer 1-op-1 gebruikt. */
+  grootboek: Map<string, GrootboekMapping>;
+  /** SEM-btw-code -> CASH-btw-code. Verplicht: elke gebruikte btw-code moet gemapt zijn. */
+  btwCode: Map<string, string>;
+  /** SEM-debiteurnummer -> CASH-debiteurnummer. Zonder rij wordt het SEM-nummer 1-op-1 gebruikt. */
   debiteur: Map<string, string>;
 }
 
@@ -32,36 +33,31 @@ export function totalen(factuur: SemFactuur): Totalen {
   return { exclCents, btwCents, inclCents: exclCents + btwCents };
 }
 
-/** Vertaalt een SEM-factuur naar een CASH-boeking, of geeft alle mappingfouten terug. */
+/** Vertaalt een SEM-factuur naar een CASH-boeking, of geeft alle fouten terug. */
 export function mapFactuur(factuur: SemFactuur, mappings: Mappings, administratie: string): MapResult {
-  const fouten: string[] = [];
+  const fouten: string[] = [...factuur.problemen];
 
-  if (factuur.regels.length === 0) fouten.push("Factuur heeft geen regels");
+  if (factuur.regels.length === 0 && fouten.length === 0) fouten.push("Factuur heeft geen regels");
 
-  for (const r of factuur.regels) {
-    if (!Number.isInteger(r.bedragExclCents) || !Number.isInteger(r.btwCents)) {
-      fouten.push(`Regel "${r.omschrijving}": bedrag is geen geheel aantal centen`);
-    }
-  }
-
-  const debiteurnummer = mappings.debiteur.get(factuur.debiteurId);
-  if (!debiteurnummer) fouten.push(`Geen CASH-debiteur gekoppeld aan SEM-debiteur ${factuur.debiteurId}`);
+  const debiteurnummer = mappings.debiteur.get(factuur.debiteurnummer) ?? factuur.debiteurnummer;
 
   const regels: CashBoeking["regels"] = [];
   for (const r of factuur.regels) {
-    const m = mappings.omzetsoort.get(r.omzetsoort);
-    if (!m) {
-      fouten.push(`Geen mapping voor omzetsoort "${r.omzetsoort}"`);
+    const gb = mappings.grootboek.get(r.grootboek);
+    if (gb && !gb.actief) {
+      fouten.push(`Grootboekrekening ${r.grootboek} staat in de mapping op inactief`);
       continue;
     }
-    if (!m.actief) {
-      fouten.push(`Mapping voor omzetsoort "${r.omzetsoort}" staat op inactief`);
+    const btwCode = mappings.btwCode.get(r.btwCode);
+    if (btwCode === undefined) {
+      fouten.push(`Geen CASH-btw-code gekoppeld aan SEM-btw-code "${r.btwCode || "(leeg)"}"`);
       continue;
     }
     regels.push({
-      grootboekrekening: m.grootboekrekening,
-      btwCode: m.btwCode,
-      ...(m.kostenplaats ? { kostenplaats: m.kostenplaats } : {}),
+      grootboekrekening: gb?.grootboekrekening ?? r.grootboek,
+      btwCode,
+      ...(r.kostenplaats ? { kostenplaats: r.kostenplaats } : {}),
+      ...(r.kostendrager ? { kostendrager: r.kostendrager } : {}),
       omschrijving: r.omschrijving,
       bedragExclCents: r.bedragExclCents,
       btwCents: r.btwCents,
@@ -76,7 +72,7 @@ export function mapFactuur(factuur: SemFactuur, mappings: Mappings, administrati
       administratie,
       boekdatum: factuur.factuurdatum,
       factuurnummer: factuur.factuurnummer,
-      debiteurnummer: debiteurnummer!,
+      debiteurnummer,
       omschrijving: `${factuur.soort === "creditnota" ? "Creditnota" : "Factuur"} ${factuur.factuurnummer}`,
       totaalInclCents: totalen(factuur).inclCents,
       regels,

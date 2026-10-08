@@ -1,10 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SemBatch } from "@/lib/sem/client";
 import type { Mappings } from "./mapping";
 
 export type FactuurStatus = "nieuw" | "proef" | "geboekt" | "fout" | "gewijzigd_na_boeking";
 export type RunStatus = "running" | "success" | "partial" | "failed";
 
 export interface RunTellingen {
+  n_batches: number;
   n_opgehaald: number;
   n_geboekt: number;
   n_proef: number;
@@ -15,9 +17,11 @@ export interface RunTellingen {
 export interface FactuurRow {
   sem_factuur_id: string;
   factuurnummer: string;
-  factuurdatum: string;
+  factuurdatum: string | null;
   soort: "factuur" | "creditnota";
-  sem_debiteur_id: string;
+  sem_debiteurnummer: string;
+  sem_batch_number: number;
+  sem_company_code: string | null;
   totaal_excl_cents: number;
   totaal_btw_cents: number;
   totaal_incl_cents: number;
@@ -45,6 +49,7 @@ export interface SyncStore {
   /** Alleen status-velden bijwerken, bv. bij een wijziging na boeking. */
   markeerFactuur(semId: string, patch: { status: FactuurStatus; foutmelding: string; laatste_run_id: string }): Promise<void>;
   upsertFactuur(row: FactuurRow): Promise<void>;
+  upsertBatch(b: { batch: SemBatch; runId: string; nFacturen: number; fout: string | null }): Promise<void>;
   laadMappings(): Promise<Mappings>;
 }
 
@@ -109,19 +114,34 @@ export function supabaseStore(sb: SupabaseClient): SyncStore {
       );
     },
 
-    async laadMappings() {
-      const omzet = check(
-        await sb.from("map_omzetsoort").select("sem_omzetsoort, grootboekrekening, btw_code, kostenplaats, actief"),
-      );
-      const deb = check(await sb.from("map_debiteur").select("sem_debiteur_id, cash_debiteurnummer"));
-      return {
-        omzetsoort: new Map(
-          (omzet ?? []).map((r) => [
-            r.sem_omzetsoort,
-            { grootboekrekening: r.grootboekrekening, btwCode: r.btw_code, kostenplaats: r.kostenplaats, actief: r.actief },
-          ]),
+    async upsertBatch({ batch, runId, nFacturen, fout }) {
+      check(
+        await sb.from("sem_batches").upsert(
+          {
+            batch_number: batch.BatchNumber,
+            company_code: batch.CompanyCode ?? "",
+            naam: batch.Name,
+            sem_created_at: batch.CreatedAt,
+            n_facturen: nFacturen,
+            fout,
+            laatste_run_id: runId,
+            laatst_opgehaald_at: new Date().toISOString(),
+          },
+          { onConflict: "batch_number,company_code" },
         ),
-        debiteur: new Map((deb ?? []).map((r) => [r.sem_debiteur_id, r.cash_debiteurnummer])),
+      );
+    },
+
+    async laadMappings() {
+      const gb = check(await sb.from("map_grootboek").select("sem_grootboek, grootboekrekening, actief"));
+      const btw = check(await sb.from("map_btwcode").select("sem_btw_code, cash_btw_code"));
+      const deb = check(await sb.from("map_debiteur").select("sem_debiteurnummer, cash_debiteurnummer"));
+      return {
+        grootboek: new Map(
+          (gb ?? []).map((r) => [r.sem_grootboek, { grootboekrekening: r.grootboekrekening, actief: r.actief }]),
+        ),
+        btwCode: new Map((btw ?? []).map((r) => [r.sem_btw_code, r.cash_btw_code])),
+        debiteur: new Map((deb ?? []).map((r) => [r.sem_debiteurnummer, r.cash_debiteurnummer])),
       };
     },
   };

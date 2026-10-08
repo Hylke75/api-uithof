@@ -1,28 +1,52 @@
 # Uithof facturensync (SEM → CASH)
 
-Elke nacht worden facturen uit **Smart Event Manager (SEM)** opgehaald en in **CASH** geboekt.
-Dit vervangt de handmatige batch-import.
+Elke nacht worden de journaalpostbatches uit **Smart Event Manager (SEM)** opgehaald en in **CASH**
+geboekt. Dit vervangt de handmatige import in CASH.
 
 - **Vercel** (Next.js/TypeScript): nachtelijke cron (`vercel.json`, 01:00 UTC) en een beheerpagina
-- **Supabase**: logboek van runs, facturenhistorie en mappingtabellen
+- **Supabase**: logboek van runs, batches, facturenhistorie en mappingtabellen
 - **GitHub**: versiebeheer
 
-> **Status:** de basisopzet staat. De koppelingen met SEM en CASH zijn nog *stubs*, en wachten op
-> API-documentatie en toegang. De **proefmodus staat standaard aan**.
+> **Status:** de SEM-koppeling is gebouwd op basis van de API-documentatie en getest met nagebootste
+> antwoorden. Hij moet nog gecontroleerd worden met echte data uit de testomgeving (`npm run sem:verken`).
+> De CASH-koppeling is nog een *stub*. De **proefmodus staat standaard aan**.
+
+## Werkwijze voor De Uithof
+
+1. Een medewerker maakt in SEM met de hand een journaalpostbatch aan. Via de API kan dat niet.
+2. 's Nachts haalt de sync alle batches op die sinds de vorige run zijn aangemaakt of gewijzigd.
+3. De facturen uit die batches worden in CASH geboekt. Elke factuur wordt maar één keer geboekt.
 
 ## Hoe een run werkt
 
-1. Het venster bepalen: vanaf het einde van de vorige geslaagde run min 7 dagen (om laat ingevoerde
-   facturen mee te nemen), maar nooit vóór `SYNC_START_DATE`. Bij de eerste run is dat `SYNC_START_DATE`.
-2. Facturen uit SEM ophalen.
-3. Per factuur:
-   - **Al geboekt en ongewijzigd:** overslaan. Een factuur wordt nooit twee keer geboekt.
+1. **Batches ophalen:** `GetJournalEntryBatches` met `FromModifiedAt` = de vorige run min 7 dagen,
+   maar nooit vóór `SYNC_START_DATE`. Bij de eerste run is dat `SYNC_START_DATE`.
+2. **Per batch:** `GetJournalEntries` (journaalposten) en `GetInvoices` (factuurkoppen met totalen) ophalen.
+3. **Facturen samenstellen** (`src/lib/sem/facturen.ts`):
+   - De journaalposten worden per `InvoiceID` gegroepeerd.
+   - Omzetregels zijn de posten met een `InvoiceLineID`. Credit telt als omzet (+) en debet als
+     correctie of creditnota (−). Het bedrag excl. btw is `BaseAmount`, de btw is `TaxAmount`.
+   - De som van de regels moet aansluiten op `TotalAmountEx` en `TotalAmountIn` uit de factuurkop,
+     met een marge van 1 cent. Sluit het niet aan, dan wordt de factuur **niet** geboekt.
+4. **Per factuur:**
+   - **Factuurdatum vóór `SYNC_START_DATE`:** overslaan, want die factuur zit al via de handmatige import in CASH.
+   - **Al geboekt en ongewijzigd:** overslaan.
    - **Al geboekt, maar in SEM gewijzigd:** de status wordt `gewijzigd_na_boeking`, voor handmatige controle.
-   - **Mapping ontbreekt** (omzetsoort of debiteur): de status wordt `fout`, met een melding. De volgende run probeert het opnieuw.
+   - **Probleem of ontbrekende mapping:** de status wordt `fout`, met een melding. De volgende run probeert het opnieuw.
    - **Proefmodus:** de status wordt `proef`. De boeking die naar CASH *zou* gaan, wordt opgeslagen in `cash_payload`.
    - **Live:** eerst wordt de status `nieuw` vastgelegd, daarna wordt er geboekt in CASH, en dan wordt de status `geboekt`.
      Stopt een run halverwege, dan blijft de status `nieuw` staan en wordt de factuur **niet** automatisch opnieuw geboekt.
-4. Het resultaat komt in `sync_runs`: `success`, `partial` (bij een of meer fouten) of `failed`.
+5. **Resultaat:** komt in `sync_runs` (`success`, `partial` of `failed`, met de meldingen erbij) en per batch in `sem_batches`.
+
+## Mapping
+
+| Tabel | Wat | Verplicht? |
+|---|---|---|
+| `map_btwcode` | SEM-btw-code (bijv. `Hoog`) → CASH-btw-code | **Ja**, voor elke gebruikte code. Een lege code heeft sleutel `''` |
+| `map_grootboek` | SEM-grootboek → CASH-grootboek | Nee. Zonder rij wordt het nummer 1-op-1 overgenomen |
+| `map_debiteur` | SEM-debiteurnummer → CASH-debiteurnummer | Nee. Zonder rij wordt het nummer 1-op-1 overgenomen |
+
+`npm run sem:verken` laat zien welke btw-codes en grootboekrekeningen in een batch voorkomen.
 
 ## Statussen van facturen
 
@@ -31,7 +55,7 @@ Dit vervangt de handmatige batch-import.
 | `proef` | Gemapt in proefmodus, niet geboekt |
 | `nieuw` | Boeking gestart, maar de uitkomst is onbekend. Controleer dit in CASH |
 | `geboekt` | Geboekt in CASH (`cash_boeking_id`) |
-| `fout` | Mapping- of CASH-fout. Zie `foutmelding` |
+| `fout` | Probleem, mapping- of CASH-fout. Zie `foutmelding` |
 | `gewijzigd_na_boeking` | Gewijzigd in SEM nadat de factuur geboekt is. Handmatig afhandelen |
 
 ## Lokaal ontwikkelen
@@ -39,8 +63,10 @@ Dit vervangt de handmatige batch-import.
 ```bash
 npm install
 cp .env.example .env.local   # vul de waarden in
-npm test                     # unit tests voor de sync-logica
+npm test                     # unit tests
 npm run typecheck
+npm run sem:verken -- 2026-09-01      # bekijk batches/journaalposten uit SEM (alleen lezen)
+npm run sem:verken -- 2026-09-01 41   # batch 41 in detail
 npm run dev                  # beheerpagina op http://localhost:3000
 ```
 
@@ -52,8 +78,37 @@ Handmatig een cron-run starten:
 curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync
 ```
 
+## SEM-API
+
+- Documentatie: https://support.smarteventmanager.com/api/html/f7c1ff93-5b8d-58b2-9591-29eb62b8c1cb.htm (overzicht van controllers)
+- Authenticatie: header `ApiKey: <key>`. Er is één key per SEM-omgeving.
+- Omgevingen:
+  - De Uithof: `https://deuithof.smarteventmanager.com`
+  - Test (Connector-licentie): `https://apidemo.smarteventmanager.com`
+- Gebruikte endpoints. SEM documenteert GET met een body, maar staat POST toe; wij gebruiken POST.
+  - `api/JournalEntryBatches/GetJournalEntryBatches`: `{ JournalEntryBatchFilter: { FromModifiedAt } }` → `JournalEntryBatches[]`
+  - `api/JournalEntries/GetJournalEntries`: `{ JournalEntryFilter: { BatchNumber, CompanyCode? } }` → `JournalEntries[]`
+  - `api/Invoices/GetInvoices`: `{ InvoiceFilter: { BatchNumbers, CompanyCodes? }, InvoiceLoadOptions }` → `Invoices[]`
+- Beperkingen:
+  - Batches worden altijd met de hand aangemaakt en kunnen niet als verwerkt gemarkeerd worden.
+  - Er is geen vaste rate limit. Houd het aantal aanroepen redelijk, want de omgeving wordt gedeeld.
+- Betalingen terugzetten kan later via `api/Invoices/AddInvoicePayments`
+  (`InvoiceID` of `InvoiceNumber`, `Amount`, `PaymentDateTime`, `PaymentRegisterID`).
+
+## CASH
+
+- Het account `hylke@linkandlead.nl` (Sporttainment Center De Uithof B.V.) is een
+  **API-gebruiker**, maar heeft nog **geen administratie gekoppeld**. Zonder koppeling geeft
+  elke aanroep de fout `1002 Unauthorized Access`. Een beheerder van De Uithof (of de accountant)
+  moet de administratie koppelen via Gebruikersbeheer.
+- **CASH API 3.0** is SOAP/XML met genummerde aanvragen en records. Er bestaat ook een **API 4.0 (REST)**.
+  Die heeft de voorkeur als hij verkoopboekingen ondersteunt.
+- De CASH-koppeling zit achter de interface `CashClient` (`src/lib/cash/client.ts`). Of het
+  SOAP of REST wordt, verandert dus niets aan de sync-logica.
+
 ## Beveiliging
 
+- API-keys en wachtwoorden staan alleen in de omgevingsvariabelen (Vercel / `.env.local`), nooit in de repo.
 - De beheerpagina zit achter HTTP Basic Auth (`ADMIN_USER` / `ADMIN_PASSWORD`).
 - De cron-route accepteert alleen `Authorization: Bearer $CRON_SECRET`. Vercel stuurt die header automatisch mee.
 - Supabase: RLS staat aan zonder policies. Alleen de server, met de service role key, heeft toegang.
@@ -66,58 +121,14 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync
    Anders worden facturen dubbel geboekt.
 4. Zet `SYNC_DRY_RUN=false` en `CASH_ADMINISTRATIE` op de productieadministratie.
 
-## Bevindingen API's (2 oktober 2026)
-
-### Smart Event Manager
-
-- De documentatie staat op `support.smarteventmanager.com/api/...`. Die kunnen we vanuit de
-  ontwikkelomgeving niet bereiken: het netwerkbeleid blokkeert het domein.
-- Een oude open-source client (Opifer, 2014, API 8.1) laat dit zien: inloggen gaat met
-  `POST /Api/Account/LogOn`, dat geeft een `SecurityToken` terug. Daarna stuurt elke aanroep
-  header `SecurityToken` mee, met JSON naar `/Api/<Module>/<Actie>`. Facturen zitten niet in
-  die client. Dit moeten we dus nog controleren tegen de actuele documentatie.
-- **Bestaande boekhoudkoppelingen werken met batches.** Bij Databrydge (Exact/Twinfield) en
-  Appconnex (AFAS) maakt iemand in SEM een batch aan. Die batch (debiteuren, journaalposten en
-  facturen) wordt via de API opgehaald. Betalingen kunnen optioneel teruggeschreven worden, bij
-  de volgende batch. Kostenplaats en kostendrager komen mee uit SEM.
-  → **Bevestigd door SEM (5 oktober 2026):** de API heeft batches. De Uithof heeft nog geen
-  export-batch ingericht.
-  - Batches ophalen: https://support.smarteventmanager.com/api/html/d775c78a-ca3b-486f-76b3-2398c5cf70ef.htm
-  - Facturen uit een batch ophalen: https://support.smarteventmanager.com/api/html/fe256f44-ff48-a9e1-5821-cbc2dfacd93a.htm
-  - Omgeving De Uithof: `https://deuithof.smarteventmanager.com`
-
-  Waarschijnlijk werkt de sync dan per batch: nieuwe batches ophalen, de facturen per batch
-  verwerken en elke batch maar één keer boeken. Dat volgt zodra we de documentatie kunnen lezen.
-
-### CASH
-
-- Het account `hylke@linkandlead.nl` (Sporttainment Center De Uithof B.V.) is een
-  **API-gebruiker**, maar heeft nog **geen administratie gekoppeld**. Zonder koppeling geeft
-  elke aanroep de fout `1002 Unauthorized Access`. Een beheerder van De Uithof (of de accountant)
-  moet de administratie koppelen via Gebruikersbeheer.
-- De rechten lopen via een API-gebruikerssjabloon op accountant- of bedrijfsniveau. Standaard
-  staan alle rechten aan.
-- **CASH API 3.0** is SOAP/XML met genummerde aanvragen en records (bijvoorbeeld 8502: de laatste
-  wijzigingen in klanten). Er bestaat ook een **API 4.0 (REST)**. Die heeft de voorkeur als hij
-  journaalposten en verkoopboekingen ondersteunt.
-- Bij CASH-support opvragen: de WSDL en/of de REST-documentatie, plus de recordindeling voor
-  verkoopboekingen/journaalposten en voor debiteuren.
-
-De CASH-koppeling zit achter de interface `CashClient` (`src/lib/cash/client.ts`). Of het
-SOAP of REST wordt, verandert dus niets aan de sync-logica.
-
 ## Openstaande punten
 
-- [ ] Toegang tot de SEM-documentatie (domein toestaan in het netwerkbeleid, of de pagina's aanleveren)
-- [ ] SEM: wie maakt de batches aan, en hoe vaak? Of kan dat automatisch / via de API?
+- [ ] SEM: de omzetting controleren met echte journaalposten uit de testomgeving (`npm run sem:verken`)
+- [ ] SEM: de btw-codes en grootboekrekeningen van De Uithof in de mapping zetten
 - [ ] CASH: administratie van De Uithof koppelen aan de API-gebruiker
-- [ ] CASH: WSDL / API 4.0-documentatie en recordindeling opvragen bij CASH-support
-- [ ] Toegang: SEM-login, CASH-API-key, testadministratie in CASH
-- [ ] Mapping: grootboekrekening en btw-code (en eventueel kostenplaats) per omzetsoort
-- [ ] Strategie voor de koppeling van debiteuren (SEM-klant ↔ CASH-debiteurnummer; nieuwe debiteuren automatisch aanmaken?)
+- [ ] CASH: API 4.0 (REST)-documentatie of WSDL en recordindeling opvragen bij CASH-support, en de `CashClient` bouwen
+- [ ] CASH: debiteuren. Bestaan de SEM-debiteurnummers al in CASH, of moeten nieuwe debiteuren aangemaakt worden (via SEM `GetRelation`)?
+- [ ] CASH: is er een duplicaatcontrole op factuurnummer? Zo is een time-out veilig af te handelen
 - [ ] Startdatum: eerste factuurdatum die niet meer handmatig in CASH komt
-- [ ] Welke documenten moeten mee: facturen, creditnota's, proforma's? (Proforma's worden nu niet ondersteund)
-- [ ] Moeten betalingen en afletteren mee?
-- [ ] Kan SEM filteren op "gewijzigd sinds"? Dat is betrouwbaarder dan filteren op factuurdatum
-- [ ] Ondersteunt CASH een duplicaatcontrole of idempotentiesleutel (bijvoorbeeld op factuurnummer)? Zo is een time-out veilig af te handelen
+- [ ] Betalingen uit CASH terugzetten in SEM (`AddInvoicePayments`): gewenst?
 - [ ] Supabase-organisatie (kosten) en contactpersoon De Uithof voor de parallel-run
