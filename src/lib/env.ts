@@ -16,8 +16,10 @@ const schema = z.object({
   CASH_BASE_URL: z.url().default("https://www.cashweb.nl/api/4.0"),
   CASH_API_KEY: z.string().min(1),
   CASH_ADMINISTRATIE: z.string().min(1),
-  CASH_DAGBOEK: z.string().min(1).max(6),
-  CASH_GB_DEBITEUREN: z.string().min(1).max(6),
+  // Mogen leeg zijn tijdens de proefperiode; facturen krijgen dan de melding dat ze ontbreken
+  // en worden nooit geboekt (zie controleerBoeking).
+  CASH_DAGBOEK: z.string().max(6).default(""),
+  CASH_GB_DEBITEUREN: z.string().max(6).default(""),
 });
 
 export type Env = z.infer<typeof schema>;

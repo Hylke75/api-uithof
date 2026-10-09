@@ -68,7 +68,7 @@ export default async function Beheer({ searchParams }: { searchParams: Promise<{
     <main>
       <h1>Uithof facturensync</h1>
       <p className="muted">
-        Smart Event Manager ({new URL(e.SEM_BASE_URL).host}) → CASH (administratie {e.CASH_ADMINISTRATIE}, dagboek {e.CASH_DAGBOEK}).
+        Smart Event Manager ({new URL(e.SEM_BASE_URL).host}) → CASH (administratie {e.CASH_ADMINISTRATIE}, dagboek {e.CASH_DAGBOEK || "nog niet ingesteld"}).
         Elke nacht om 01:00 UTC worden de journaalpostbatches verwerkt die in SEM zijn aangemaakt.
       </p>
 
