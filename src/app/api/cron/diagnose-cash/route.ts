@@ -21,6 +21,10 @@ export async function GET(req: NextRequest) {
   const key = leesEnv("CASH_API_KEY") ?? "";
   const admin = leesEnv("CASH_ADMINISTRATIE") ?? "";
   const relaties = (req.nextUrl.searchParams.get("relaties") ?? "").split(",").filter(Boolean);
+  // Optioneel: grootboekmutaties (record 301) van een periode JJPP|JJPP, gefilterd op dagboek/stuknummer.
+  const periode = req.nextUrl.searchParams.get("periode");
+  const dagboekFilter = req.nextUrl.searchParams.get("dagboek");
+  const stukFilter = req.nextUrl.searchParams.get("stuk");
 
   async function get(pad: string) {
     try {
@@ -43,8 +47,18 @@ export async function GET(req: NextRequest) {
   const admJson = adm.json as { Dir?: { Name?: string; Adms?: { Adm?: unknown } } } | null;
   const relRijen = rijen((rel.json as { R0101?: unknown } | null)?.R0101);
 
+  let mutaties: unknown = undefined;
+  if (periode) {
+    const m = await get(`/get/index/301T${q}&params=${encodeURIComponent(periode)}`);
+    const lijst = rijen((m.json as { R0301?: unknown } | null)?.R0301).filter(
+      (r) => (!dagboekFilter || r.F0901 === dagboekFilter) && (!stukFilter || Number(r.F0303) === Number(stukFilter)),
+    );
+    mutaties = { http: m.http, aantal: lijst.length, lijst: lijst.slice(0, 50), fout: m.tekst };
+  }
+
   return NextResponse.json({
     admin,
+    mutaties,
     administraties: { http: adm.http, relatie: admJson?.Dir?.Name, lijst: rijen(admJson?.Dir?.Adms?.Adm).map((a) => ({ code: a.Code, naam: a.Name, readOnly: a.ReadOnly })), fout: adm.tekst },
     dagboeken: { http: dag.http, lijst: rijen((dag.json as { R0901?: unknown } | null)?.R0901), fout: dag.tekst },
     grootboek: { http: gb.http, lijst: rijen((gb.json as { R0201?: unknown } | null)?.R0201).map((r) => ({ rek: r.F0201, oms: r.F0203, soort: r.F0204, ob: r.F0242 })), fout: gb.tekst },
