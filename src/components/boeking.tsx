@@ -1,4 +1,4 @@
-import { naarRecords, type CashBoeking } from "@/lib/cash/client";
+import { importBericht, naarRecords, type CashBoeking } from "@/lib/cash/client";
 import type { SemFactuur } from "@/lib/sem/client";
 import { euro } from "./format";
 
@@ -148,7 +148,7 @@ export function CashRegels({ boeking }: { boeking: CashBoeking }) {
       </div>
       <details className="uitklap">
         <summary>Ruwe data naar CASH (JSON)</summary>
-        <pre>{JSON.stringify({ admin: boeking.administratie, format: 0, content: { cash: [{ R301: records }] } }, null, 2)}</pre>
+        <pre>{JSON.stringify(importBericht(boeking), null, 2)}</pre>
       </details>
     </>
   );

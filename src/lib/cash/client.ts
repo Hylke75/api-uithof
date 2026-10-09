@@ -95,6 +95,15 @@ export function controleerBoeking(b: CashBoeking): string[] {
   return [...new Set(p)];
 }
 
+/**
+ * Importbericht voor POST /import. Elk record staat als eigen element in `cash` ({ R301: [regel] }),
+ * zoals in het voorbeeld van CASH. Meerdere regels in één R301-lijst worden door CASH niet
+ * allemaal verwerkt: in de test (9 oktober 2026) bleef alleen de laatste regel over.
+ */
+export function importBericht(b: CashBoeking) {
+  return { admin: b.administratie, format: 0, content: { cash: naarRecords(b).map((r) => ({ R301: [r] })) } };
+}
+
 /** Zet een boeking om naar record-301-regels die samen op nul sluiten. */
 export function naarRecords(b: CashBoeking): Veld[] {
   const gemeenschappelijk = {
@@ -198,7 +207,7 @@ export function createCashClient(config: CashConfig) {
 
       const { status, body } = await request("/import", {
         method: "POST",
-        body: JSON.stringify({ admin: boeking.administratie, format: 0, content: { cash: [{ R301: naarRecords(boeking) }] } }),
+        body: JSON.stringify(importBericht(boeking)),
       });
       const referentie = `${boeking.dagboek}/${boeking.factuurnummer}`;
       if (status === 201 || status === 200) return { boekingId: referentie };

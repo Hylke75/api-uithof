@@ -110,7 +110,10 @@ describe("createCashClient", () => {
     expect(init.headers).toMatchObject({ Authorization: "sleutel", "Cache-Control": "no-cache", "Sec-Fetch-Mode": "cors" });
     const body = JSON.parse(init.body as string);
     expect(body).toMatchObject({ admin: "demo", format: 0 });
-    expect(body.content.cash[0].R301).toHaveLength(6);
+    // Elk record als eigen element: CASH verwerkt anders alleen de laatste regel.
+    expect(body.content.cash).toHaveLength(6);
+    expect(body.content.cash.every((c: { R301: unknown[] }) => c.R301.length === 1)).toBe(true);
+    expect(body.content.cash[0].R301[0]).toMatchObject({ F0201: "1300", F0101: "001001" });
   });
 
   it("wacht een Pending-transactie af", async () => {
