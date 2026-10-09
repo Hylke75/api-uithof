@@ -73,6 +73,10 @@ export default async function Controle() {
       <h1>Verbindingen controleren</h1>
       <p className="muted">Alleen lezen: er wordt niets opgehaald voor verwerking en niets geboekt.</p>
 
+      <p>
+        <Link href="/voorbeeld">Voorbeeld per periode bekijken →</Link>
+      </p>
+
       <Resultaat titel="Supabase (database)" r={supa}>
         <p>Verbonden; {supa.ok ? supa.data : 0} runs in het logboek.</p>
       </Resultaat>
