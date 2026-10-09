@@ -13,6 +13,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const resultaat = await startSync("cron");
-  return NextResponse.json(resultaat, { status: resultaat.status === "failed" ? 500 : 200 });
+  try {
+    const resultaat = await startSync("cron");
+    return NextResponse.json(resultaat, { status: resultaat.status === "failed" ? 500 : 200 });
+  } catch (e) {
+    // Fout vóór de run gestart kon worden (bijv. database niet bereikbaar): geen sleutels in de melding.
+    const melding = e instanceof Error ? e.message : String(e);
+    console.error("Sync niet gestart:", melding);
+    return NextResponse.json({ status: "failed", error: `Sync niet gestart: ${melding}` }, { status: 500 });
+  }
 }
