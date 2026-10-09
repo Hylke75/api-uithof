@@ -29,6 +29,14 @@ export async function startSync(trigger: "cron" | "handmatig") {
   });
 }
 
+async function stap<T>(naam: string, f: () => Promise<T>): Promise<T> {
+  try {
+    return await f();
+  } catch (e) {
+    throw new Error(`${naam}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 /**
  * Herstelt een mislukte testboeking in "demo": boekt de tegenboeking van alle regels die CASH bij
  * het oude boekstuk heeft staan (zodat dat op nul uitkomt), zet de factuur terug en boekt hem
@@ -53,7 +61,7 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number)
   if (data.status === "geboekt" && dagboek && stuk) {
     const cash = createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY });
     const datum = String(data.factuurdatum);
-    const oud = await cash.mutaties(TEST_ADMINISTRATIE, cashDatum(datum).slice(0, 4), dagboek, stuk);
+    const oud = await stap("oude boeking lezen", () => cash.mutaties(TEST_ADMINISTRATIE, cashDatum(datum).slice(0, 4), dagboek, stuk));
     if (oud.length > 0) {
       const tegen = oud.map((m) => ({
         F0901: dagboek,
@@ -64,7 +72,7 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number)
         F0306: "Correctie testboeking",
         F0307: cashBedrag(-Math.round(Number(String(m.F0307).replace(",", ".")) * 100)),
       }));
-      await cash.importeerRecords(TEST_ADMINISTRATIE, tegen);
+      await stap("tegenboeken", () => cash.importeerRecords(TEST_ADMINISTRATIE, tegen));
       tegengeboekt = tegen.length;
     }
   }

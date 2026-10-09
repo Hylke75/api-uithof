@@ -173,7 +173,9 @@ export function createCashClient(config: CashConfig) {
     // CASH verwijst grote antwoorden door naar externe opslag (Azure); die weigert onze sleutel.
     const locatie = res.headers.get("location");
     if (res.status >= 300 && res.status < 400 && locatie) {
-      res = await fetch(new URL(locatie, `${base}/`), { signal: AbortSignal.timeout(config.timeoutMs ?? 60_000) });
+      const doel = new URL(locatie, `${base}/`);
+      res = await fetch(doel, { signal: AbortSignal.timeout(config.timeoutMs ?? 60_000) });
+      if (!res.ok) return { status: res.status, body: `doorverwezen naar ${doel.host}: ${(await res.text()).slice(0, 300)}` };
     }
     const tekst = await res.text();
     let body: unknown = tekst;
