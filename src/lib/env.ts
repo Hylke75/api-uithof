@@ -24,6 +24,12 @@ export type Env = z.infer<typeof schema>;
 
 let cached: Env | undefined;
 
+/** Namen van ontbrekende of ongeldige instellingen (nooit de waarden zelf), voor de beheerpagina. */
+export function ontbrekendeInstellingen(): string[] {
+  const r = schema.safeParse(process.env);
+  return r.success ? [] : [...new Set(r.error.issues.map((i) => String(i.path[0])))];
+}
+
 /** Leest en valideert de omgevingsvariabelen; faalt hard bij ontbrekende of ongeldige waarden. */
 export function env(): Env {
   cached ??= schema.parse(process.env);
