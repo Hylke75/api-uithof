@@ -66,10 +66,11 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number)
       const tegen = oud.map((m) => ({
         F0901: dagboek,
         F0302: cashDatum(datum),
-        F0303: stuk.padStart(6, "0"),
+        // CASH weigert een bestaand boekstuknummer; de correctie krijgt 9 + het oude nummer.
+        F0303: `9${stuk.padStart(5, "0")}`,
         F0201: m.F0201,
         ...(m.F0101 ? { F0101: m.F0101 } : {}),
-        F0306: "Correctie testboeking",
+        F0306: `Correctie ${dagboek}/${stuk}`,
         F0307: cashBedrag(-Math.round(Number(String(m.F0307).replace(",", ".")) * 100)),
       }));
       await stap("tegenboeken", () => cash.importeerRecords(TEST_ADMINISTRATIE, tegen));
