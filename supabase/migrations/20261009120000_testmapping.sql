@@ -9,7 +9,7 @@ on conflict (sem_grootboek) do update set grootboekrekening = excluded.grootboek
 -- Kostenplaatsen uit SEM (4 tekens) passen niet in CASH (3 tekens): voorlopig weglaten.
 insert into public.instellingen (sleutel, waarde, omschrijving) values
   ('kostenplaatsen', 'negeren', 'Kostenplaatsen uit SEM (4 tekens) passen niet in CASH (3 tekens); weglaten tot er een vertaling is'),
-  ('cash_dagboek', 'VERK', 'Verkoopboek (soort U) in CASH')
+  ('cash_dagboek', 'VERKS', 'Verkoopfacturen Smart (soort U) in CASH')
 on conflict (sleutel) do update set waarde = excluded.waarde, omschrijving = excluded.omschrijving, updated_at = now();
 
 -- Batch 92 (factuur 14): omzetrekening Brasserie/Survival/Paintball (btw hoog), en een testdebiteur

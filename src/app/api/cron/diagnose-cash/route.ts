@@ -58,6 +58,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     admin,
+    // CASH_DAGBOEK gaat voor de instelling cash_dagboek in de database.
+    dagboekOmgeving: leesEnv("CASH_DAGBOEK") ?? null,
     mutaties,
     administraties: { http: adm.http, relatie: admJson?.Dir?.Name, lijst: rijen(admJson?.Dir?.Adms?.Adm).map((a) => ({ code: a.Code, naam: a.Name, readOnly: a.ReadOnly })), fout: adm.tekst },
     dagboeken: { http: dag.http, lijst: rijen((dag.json as { R0901?: unknown } | null)?.R0901), fout: dag.tekst },
