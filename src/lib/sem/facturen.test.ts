@@ -116,4 +116,29 @@ describe("bouwFacturen", () => {
     const { batchProblemen } = bouwFacturen(batch, factuurPosten, [kop(), kop({ InvoiceID: 2000, Number: 10320 })]);
     expect(batchProblemen.join(" ")).toContain("10320 heeft geen journaalposten");
   });
+
+  it("verwerkt een echte journaalpost uit de SEM-testomgeving (batch 94, factuur 36)", () => {
+    const basis = { BatchNumber: 94, CompanyCode: "Outdoor", InvoiceID: 1989, InvoiceNumber: 36, InvoiceDate: "2024-08-16", DebtorNumber: "69" };
+    const posten: SemJournaalpost[] = [
+      post({ ...basis, JournalEntryID: 11971, AccountTypeCode: "DEB", AccountCode: "101095", DebitAmount: 28.85, CreditAmount: 0, TaxAmount: 4.55, BaseAmount: 0 }),
+      post({ ...basis, JournalEntryID: 11972, AccountTypeCode: "BLA", AccountCode: "101097", CreditAmount: 0.42, TaxAmount: 0.42, TaxCode: "Laag", TaxPercentage: 9, BaseAmount: 4.63 }),
+      post({ ...basis, JournalEntryID: 11973, AccountTypeCode: "BHO", AccountCode: "120000", CreditAmount: 4.13, TaxAmount: 4.13, TaxCode: "Hoog", TaxPercentage: 21, BaseAmount: 19.67 }),
+      post({ ...basis, JournalEntryID: 11975, AccountTypeCode: "OPB", AccountCode: "123215", InvoiceLineID: 27306, InvoiceLineDescription: "Chocomelk / Fristi", CreditAmount: 4.63, TaxAmount: 0.42, TaxCode: "Laag", TaxPercentage: 9, BaseAmount: 0, AmountInclusiveTax: 5.04, CostCenterCode: "0140" }),
+      post({ ...basis, JournalEntryID: 11974, AccountTypeCode: "OPB", AccountCode: "123210", InvoiceLineID: 27307, InvoiceLineDescription: "Bacardi", CreditAmount: 19.67, TaxAmount: 4.13, TaxCode: "Hoog", TaxPercentage: 21, BaseAmount: 0, IsAmountInclusiveTax: true, AmountInclusiveTax: 23.8, CostCenterCode: "0140" }),
+    ];
+    const { facturen, batchProblemen } = bouwFacturen({ BatchNumber: 94, CompanyCode: "Outdoor" }, posten, [
+      { InvoiceID: 1989, Number: 36, InvoiceDate: "2024-08-16", DebtorNumber: "69", TotalAmountEx: 24.3, TotalAmountIn: 28.85, AmountTax: 4.55 },
+    ]);
+    expect(batchProblemen).toEqual([]);
+    const f = facturen[0];
+    expect(f).toMatchObject({ factuurnummer: "36", debiteurnummer: "69", debiteurGrootboek: "101095", debiteurTotaalCents: 2885, totaalInclCents: 2885, problemen: [] });
+    expect(f.regels.map((r) => [r.grootboek, r.bedragExclCents, r.btwCents, r.kostenplaats])).toEqual([
+      ["123215", 463, 42, "0140"],
+      ["123210", 1967, 413, "0140"],
+    ]);
+    expect(f.btwRegels).toEqual([
+      { grootboek: "101097", btwCode: "Laag", btwPercentage: 9, bedragCents: 42 },
+      { grootboek: "120000", btwCode: "Hoog", btwPercentage: 21, bedragCents: 413 },
+    ]);
+  });
 });

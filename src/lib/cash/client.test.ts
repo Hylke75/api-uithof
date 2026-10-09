@@ -53,6 +53,33 @@ describe("CASH-formaten", () => {
     expect(Math.round(som)).toBe(0);
   });
 
+  it("gebruikt de btw-regels uit SEM als die er zijn", () => {
+    const b: CashBoeking = {
+      ...boeking,
+      factuurnummer: "36",
+      debiteurnummer: "69",
+      debiteurenGrootboek: "1300",
+      totaalInclCents: 2885,
+      regels: [
+        { grootboekrekening: "123215", btwGrootboek: "", omschrijving: "Chocomelk / Fristi", bedragExclCents: 463, btwCents: 42 },
+        { grootboekrekening: "123210", btwGrootboek: "", omschrijving: "Bacardi", bedragExclCents: 1967, btwCents: 413 },
+      ],
+      btwRegels: [
+        { grootboekrekening: "1702", omschrijving: "Btw Laag 36", bedragCents: 42 },
+        { grootboekrekening: "1701", omschrijving: "Btw Hoog 36", bedragCents: 413 },
+      ],
+    };
+    expect(controleerBoeking(b)).toEqual([]);
+    expect(naarRecords(b).map((r) => [r.F0201, r.F0307])).toEqual([
+      ["1300", "28,85"],
+      ["123215", "-4,63"],
+      ["123210", "-19,67"],
+      ["1702", "-0,42"],
+      ["1701", "-4,13"],
+    ]);
+    expect(controleerBoeking({ ...b, totaalInclCents: 2900 }).join(" ")).toContain("sluit niet");
+  });
+
   it("controleert veldlengtes", () => {
     expect(controleerBoeking(boeking)).toEqual([]);
     const fout = controleerBoeking({ ...boeking, factuurnummer: "2026-0001", regels: [{ ...boeking.regels[0], kostenplaats: "2000" }] });

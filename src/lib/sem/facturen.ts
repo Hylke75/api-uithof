@@ -1,4 +1,4 @@
-import type { SemBatch, SemFactuur, SemFactuurRegel, SemInvoice, SemJournaalpost } from "./client";
+import type { SemBatch, SemBtwRegel, SemFactuur, SemFactuurRegel, SemInvoice, SemJournaalpost } from "./client";
 
 /** Euro-bedrag uit SEM naar centen. */
 export function centen(bedrag: number | null | undefined): number {
@@ -12,16 +12,20 @@ function datum(waarde: string | null | undefined): string {
 /** Bedragverschil dat we nog accepteren tussen regels en factuurkop (afronding per regel). */
 const MARGE_CENTS = 1;
 
+const tekst = (x: unknown) => String(x ?? "").trim();
+
 /**
  * Bouwt per factuur een SemFactuur uit de journaalposten van een batch.
  *
- * Omzetregels zijn de journaalposten met een InvoiceLineID. Credit = omzet (positief),
- * debet = correctie/creditnota (negatief). De tegenboekingen zonder InvoiceLineID
- * (debiteur, eventueel btw) laten we weg: die maakt CASH zelf bij een verkoopboeking.
+ * SEM levert per factuur een sluitende journaalpost (vastgesteld op de testomgeving, batch 94):
+ * - DEB: debiteurregel, debet = totaal incl. btw, op de debiteurenrekening;
+ * - OPB: omzetregels (met InvoiceLineID), credit = bedrag excl. btw, TaxAmount = btw van de regel;
+ * - BHO/BLA/…: btw-regels per tarief, credit = btw-bedrag, op de btw-rekening.
+ * BaseAmount is op omzetregels 0 en wordt dus niet gebruikt. Credit telt positief (factuur),
+ * debet negatief (creditnota).
  *
- * Omdat de exacte opbouw van de journaalposten per omgeving kan verschillen, controleren we
- * de som van de regels altijd tegen de totalen uit de factuurkop (GetInvoices). Klopt dat niet,
- * dan krijgt de factuur een probleem en wordt hij niet geboekt.
+ * Controles: de journaalpost moet op nul sluiten en aansluiten op de totalen uit de factuurkop
+ * (GetInvoices). Klopt dat niet, dan krijgt de factuur een probleem en wordt hij niet geboekt.
  */
 export function bouwFacturen(
   batch: Pick<SemBatch, "BatchNumber" | "CompanyCode">,
@@ -59,53 +63,78 @@ export function bouwFacturen(
     const problemen: string[] = [];
 
     const regels: SemFactuurRegel[] = [];
+    const btwPerRekening = new Map<string, SemBtwRegel>();
+    let debiteurPost: SemJournaalpost | undefined;
+    let saldoTotaal = 0;
+
     for (const p of lijst) {
-      if (p.InvoiceLineID == null) continue;
       const saldo = centen(p.CreditAmount) - centen(p.DebitAmount);
+      saldoTotaal += saldo;
+      const soort = tekst(p.AccountTypeCode).toUpperCase();
+
+      if (p.AccountCode == null || tekst(p.AccountCode) === "") {
+        if (saldo !== 0) problemen.push(`Journaalpost ${p.JournalEntryID}: grootboekrekening ontbreekt.`);
+        continue;
+      }
+
+      if (soort === "DEB" || (!soort && p.InvoiceLineID == null && p.DebtorNumber && saldo < 0)) {
+        if (debiteurPost) problemen.push("Meer dan één debiteurregel in de journaalpost.");
+        debiteurPost = p;
+        continue;
+      }
+
+      if (p.InvoiceLineID != null) {
+        if (saldo === 0 && centen(p.TaxAmount) === 0) continue;
+        const teken = saldo < 0 ? -1 : 1;
+        const btw = teken * Math.abs(centen(p.TaxAmount));
+        if (p.IsAmountInclusiveTax && p.AmountInclusiveTax != null && Math.abs(Math.abs(saldo) + Math.abs(btw) - Math.abs(centen(p.AmountInclusiveTax))) > MARGE_CENTS) {
+          problemen.push(`Journaalpost ${p.JournalEntryID}: bedrag excl. btw plus btw sluit niet aan op het bedrag incl. btw.`);
+        }
+        regels.push({
+          grootboek: tekst(p.AccountCode),
+          btwCode: tekst(p.TaxCode),
+          btwPercentage: p.TaxPercentage,
+          kostenplaats: tekst(p.CostCenterCode) || null,
+          kostendrager: tekst(p.CostUnitCode) || null,
+          omschrijving: tekst(p.InvoiceLineDescription),
+          bedragExclCents: saldo,
+          btwCents: btw,
+        });
+        continue;
+      }
+
+      // Overige posten zonder factuurregel: btw-regels (BHO/BLA/…).
       if (saldo === 0) continue;
-      const teken = Math.sign(saldo);
-      const btw = teken * Math.abs(centen(p.TaxAmount));
-      const excl =
-        p.BaseAmount != null
-          ? teken * Math.abs(centen(p.BaseAmount))
-          : p.IsAmountInclusiveTax
-            ? saldo - btw
-            : saldo;
-      const verwacht = p.IsAmountInclusiveTax ? excl + btw : excl;
-      if (Math.abs(verwacht - saldo) > MARGE_CENTS) {
-        problemen.push(`Journaalpost ${p.JournalEntryID}: debet/credit sluit niet aan op basisbedrag en btw.`);
-      }
-      if (p.AccountCode == null || String(p.AccountCode).trim() === "") {
-        problemen.push(`Journaalpost ${p.JournalEntryID}: grootboekrekening ontbreekt.`);
-      }
-      regels.push({
-        grootboek: String(p.AccountCode ?? "").trim(),
-        btwCode: (p.TaxCode ?? "").trim(),
-        btwPercentage: p.TaxPercentage,
-        kostenplaats: p.CostCenterCode?.trim() || null,
-        kostendrager: p.CostUnitCode?.trim() || null,
-        omschrijving: (p.InvoiceLineDescription ?? "").trim(),
-        bedragExclCents: excl,
-        btwCents: btw,
-      });
+      const rekening = tekst(p.AccountCode);
+      const bestaand = btwPerRekening.get(rekening);
+      if (bestaand) bestaand.bedragCents += saldo;
+      else btwPerRekening.set(rekening, { grootboek: rekening, btwCode: tekst(p.TaxCode), btwPercentage: p.TaxPercentage, bedragCents: saldo });
     }
+
+    const btwRegels = [...btwPerRekening.values()];
     if (regels.length === 0) problemen.push("Geen omzetregels gevonden in de journaalposten.");
 
-    // De debiteurregel: een post zonder InvoiceLineID met een debiteurnummer, waarvan het saldo
-    // gelijk is aan het factuurtotaal (debet bij een factuur, credit bij een creditnota).
-    const somInclRegels = regels.reduce((s, r) => s + r.bedragExclCents + r.btwCents, 0);
-    const debiteurPost = lijst.find(
-      (p) =>
-        p.InvoiceLineID == null &&
-        p.DebtorNumber &&
-        p.AccountCode != null &&
-        centen(p.DebitAmount) - centen(p.CreditAmount) === somInclRegels,
-    );
+    const somExcl = regels.reduce((s, r) => s + r.bedragExclCents, 0);
+    const somBtwRegels = regels.reduce((s, r) => s + r.btwCents, 0);
+    const somBtwPosten = btwRegels.reduce((s, r) => s + r.bedragCents, 0);
+    // Levert SEM aparte btw-regels, dan zijn die leidend; anders de btw per omzetregel.
+    const somBtw = btwRegels.length > 0 ? somBtwPosten : somBtwRegels;
+    const somIncl = somExcl + somBtw;
+    if (btwRegels.length > 0 && Math.abs(somBtwPosten - somBtwRegels) > Math.max(MARGE_CENTS, regels.length)) {
+      problemen.push(`Btw op de regels (${somBtwRegels / 100}) wijkt af van de btw-regels uit SEM (${somBtwPosten / 100}).`);
+    }
+
+    // Sluitend: debiteur + omzet + btw = 0. Zonder aparte btw-regels telt de btw per omzetregel mee.
+    const balans = saldoTotaal + (btwRegels.length === 0 ? somBtwRegels : 0);
+    if (debiteurPost && balans !== 0) problemen.push(`De journaalpost uit SEM sluit niet op nul (verschil ${balans / 100}).`);
+
+    const debiteurTotaalCents = debiteurPost ? centen(debiteurPost.DebitAmount) - centen(debiteurPost.CreditAmount) : null;
+    if (debiteurTotaalCents != null && debiteurTotaalCents !== somIncl) {
+      problemen.push(`Debiteurregel (${debiteurTotaalCents / 100}) sluit niet aan op omzet plus btw (${somIncl / 100}).`);
+    }
 
     const totaalExclCents = kop?.TotalAmountEx != null ? centen(kop.TotalAmountEx) : null;
     const totaalInclCents = kop?.TotalAmountIn != null ? centen(kop.TotalAmountIn) : null;
-    const somExcl = regels.reduce((s, r) => s + r.bedragExclCents, 0);
-    const somIncl = regels.reduce((s, r) => s + r.bedragExclCents + r.btwCents, 0);
     if (!kop) {
       problemen.push("Factuurkop niet gevonden via GetInvoices; totalen niet te controleren.");
     } else {
@@ -117,9 +146,9 @@ export function bouwFacturen(
       }
     }
 
-    const factuurnummer = String(kop?.Number ?? eerste.InvoiceNumber ?? "").trim();
+    const factuurnummer = tekst(kop?.Number ?? eerste.InvoiceNumber);
     const factuurdatum = datum(kop?.InvoiceDate ?? eerste.InvoiceDate);
-    const debiteurnummer = String(kop?.DebtorNumber ?? eerste.DebtorNumber ?? "").trim();
+    const debiteurnummer = tekst(kop?.DebtorNumber ?? eerste.DebtorNumber);
     if (!factuurnummer) problemen.push("Factuurnummer ontbreekt.");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(factuurdatum)) problemen.push("Factuurdatum ontbreekt of is ongeldig.");
     if (!debiteurnummer) problemen.push("Debiteurnummer ontbreekt.");
@@ -130,7 +159,9 @@ export function bouwFacturen(
       factuurdatum,
       soort: (totaalInclCents ?? somIncl) < 0 ? "creditnota" : "factuur",
       debiteurnummer,
-      debiteurGrootboek: debiteurPost ? String(debiteurPost.AccountCode).trim() : null,
+      btwRegels,
+      debiteurTotaalCents,
+      debiteurGrootboek: debiteurPost ? tekst(debiteurPost.AccountCode) : null,
       batchNumber: batch.BatchNumber,
       companyCode: batch.CompanyCode,
       regels,

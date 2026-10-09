@@ -34,6 +34,19 @@ export interface CashBoeking {
   omschrijving: string;
   totaalInclCents: number;
   regels: CashBoekingRegel[];
+  /**
+   * Btw-regels zoals SEM ze aanlevert (per btw-rekening, positief bij een factuur). Ontbreken ze,
+   * dan wordt de btw per regel opgeteld per `btwGrootboek`.
+   */
+  btwRegels?: { grootboekrekening: string; omschrijving: string; bedragCents: number }[];
+}
+
+/** De btw-regels van een boeking: uit SEM, of opgeteld uit de omzetregels. */
+export function btwRegelsVan(b: CashBoeking): { grootboekrekening: string; omschrijving: string; bedragCents: number }[] {
+  if (b.btwRegels && b.btwRegels.length > 0) return b.btwRegels;
+  const perRekening = new Map<string, number>();
+  for (const r of b.regels) if (r.btwCents !== 0) perRekening.set(r.btwGrootboek, (perRekening.get(r.btwGrootboek) ?? 0) + r.btwCents);
+  return [...perRekening].map(([grootboekrekening, bedragCents]) => ({ grootboekrekening, omschrijving: `Btw ${b.omschrijving}`, bedragCents }));
 }
 
 export interface CashClient {
@@ -71,8 +84,14 @@ export function controleerBoeking(b: CashBoeking): string[] {
   for (const r of b.regels) {
     if (!r.grootboekrekening || r.grootboekrekening.length > 6) p.push(`Grootboekrekening "${r.grootboekrekening}" past niet in CASH (max. 6 tekens)`);
     if (r.kostenplaats && r.kostenplaats.length > 3) p.push(`Kostenplaats "${r.kostenplaats}" past niet in CASH (max. 3 tekens)`);
-    if (r.btwCents !== 0 && !r.btwGrootboek) p.push(`Regel "${r.omschrijving}" heeft btw maar geen btw-grootboekrekening`);
+    if (r.btwCents !== 0 && !r.btwGrootboek && !b.btwRegels?.length) p.push(`Regel "${r.omschrijving}" heeft btw maar geen btw-grootboekrekening`);
   }
+  const btw = btwRegelsVan(b);
+  for (const r of btw) {
+    if (!r.grootboekrekening || r.grootboekrekening.length > 6) p.push(`Btw-rekening "${r.grootboekrekening}" past niet in CASH (max. 6 tekens)`);
+  }
+  const som = b.regels.reduce((s, r) => s + r.bedragExclCents, 0) + btw.reduce((s, r) => s + r.bedragCents, 0);
+  if (som !== b.totaalInclCents) p.push(`Boeking sluit niet: debiteur ${b.totaalInclCents / 100}, omzet plus btw ${som / 100}`);
   return [...new Set(p)];
 }
 
@@ -96,7 +115,6 @@ export function naarRecords(b: CashBoeking): Veld[] {
     },
   ];
 
-  const btwPerRekening = new Map<string, number>();
   for (const r of b.regels) {
     records.push({
       ...gemeenschappelijk,
@@ -105,14 +123,13 @@ export function naarRecords(b: CashBoeking): Veld[] {
       F0306: omschrijving(r.omschrijving || b.omschrijving),
       F0307: cashBedrag(-r.bedragExclCents),
     });
-    if (r.btwCents !== 0) btwPerRekening.set(r.btwGrootboek, (btwPerRekening.get(r.btwGrootboek) ?? 0) + r.btwCents);
   }
-  for (const [rekening, cents] of btwPerRekening) {
+  for (const r of btwRegelsVan(b)) {
     records.push({
       ...gemeenschappelijk,
-      F0201: rekening.toUpperCase(),
-      F0306: omschrijving(`Btw ${b.omschrijving}`),
-      F0307: cashBedrag(-cents),
+      F0201: r.grootboekrekening.toUpperCase(),
+      F0306: omschrijving(r.omschrijving),
+      F0307: cashBedrag(-r.bedragCents),
     });
   }
   return records;

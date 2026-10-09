@@ -81,6 +81,13 @@ export interface SemFactuurRegel {
   btwCents: number;
 }
 
+export interface SemBtwRegel {
+  grootboek: string;
+  btwCode: string;
+  btwPercentage: number | null;
+  bedragCents: number;
+}
+
 export interface SemFactuur {
   /** SEM InvoiceID, als string. */
   id: string;
@@ -92,6 +99,13 @@ export interface SemFactuur {
   batchNumber: number;
   companyCode: string | null;
   regels: SemFactuurRegel[];
+  /**
+   * Btw-regels zoals SEM ze boekt (AccountTypeCode o.a. BHO/BLA), per rekening; positief bij een
+   * factuur, negatief bij een creditnota. Leeg als SEM geen aparte btw-regels levert.
+   */
+  btwRegels: SemBtwRegel[];
+  /** Bedrag op de debiteurregel (DEB) in centen; null als SEM geen debiteurregel levert. */
+  debiteurTotaalCents: number | null;
   /**
    * Debiteurenrekening uit de debiteurregel van SEM (bijv. 1300 gewoon, 1320 voorschot);
    * null als SEM geen herkenbare debiteurregel levert.
