@@ -97,6 +97,8 @@ create table public.sem_facturen (
 create index sem_facturen_status_idx on public.sem_facturen (status);
 create index sem_facturen_factuurdatum_idx on public.sem_facturen (factuurdatum);
 create index sem_facturen_batch_idx on public.sem_facturen (sem_batch_number);
+create index sem_facturen_run_idx on public.sem_facturen (laatste_run_id);
+create index sem_batches_run_idx on public.sem_batches (laatste_run_id);
 
 alter table public.sync_runs     enable row level security;
 alter table public.sem_batches   enable row level security;
