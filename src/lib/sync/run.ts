@@ -1,8 +1,8 @@
-import type { CashClient } from "@/lib/cash/client";
+import { CashAfgewezenError, type CashClient } from "@/lib/cash/client";
 import type { SemClient, SemFactuur } from "@/lib/sem/client";
 import { bouwFacturen } from "@/lib/sem/facturen";
 import { contentHash } from "./hash";
-import { mapFactuur, totalen, type Mappings } from "./mapping";
+import { mapFactuur, totalen, type CashInstellingen, type Mappings } from "./mapping";
 import type { FactuurRow, RunTellingen, SyncStore } from "./store";
 
 /**
@@ -19,7 +19,7 @@ export interface SyncOptions {
   dryRun: boolean;
   /** Vroegste factuurdatum die ooit geboekt wordt, en vroegste wijzigingsdatum voor batches (YYYY-MM-DD). */
   startDate: string;
-  administratie: string;
+  cashInstellingen: CashInstellingen;
   trigger: "cron" | "handmatig";
   now?: Date;
 }
@@ -101,7 +101,7 @@ async function verwerkFactuur(
   vorigeVersie: { status: FactuurRow["status"]; content_hash: string } | undefined,
   ctx: SyncOptions & { mappings: Mappings; runId: string; t: RunTellingen },
 ) {
-  const { store, cash, dryRun, startDate, administratie, mappings, runId, t } = ctx;
+  const { store, cash, dryRun, startDate, cashInstellingen, mappings, runId, t } = ctx;
 
   if (isDatum(factuur.factuurdatum) && factuur.factuurdatum < startDate) {
     // Van vóór de overstap: die zit al via de handmatige import in CASH.
@@ -138,7 +138,7 @@ async function verwerkFactuur(
   }
 
   const basis = basisRij(factuur, hash, runId);
-  const mapped = mapFactuur(factuur, mappings, administratie);
+  const mapped = mapFactuur(factuur, mappings, cashInstellingen);
 
   if (!mapped.ok) {
     await store.upsertFactuur({ ...basis, status: "fout", foutmelding: mapped.fouten.join("; "), cash_payload: null });
@@ -166,7 +166,17 @@ async function verwerkFactuur(
     });
     t.n_geboekt++;
   } catch (e) {
-    await store.upsertFactuur({ ...basis, status: "fout", cash_payload: mapped.boeking, foutmelding: `CASH: ${melding(e)}` });
+    if (e instanceof CashAfgewezenError) {
+      // CASH heeft niets verwerkt: veilig om de volgende run opnieuw te proberen.
+      await store.upsertFactuur({ ...basis, status: "fout", cash_payload: mapped.boeking, foutmelding: `CASH: ${melding(e)}` });
+    } else {
+      // Uitkomst onbekend: status blijft "nieuw", zodat de factuur niet dubbel geboekt wordt.
+      await store.markeerFactuur(factuur.id, {
+        status: "nieuw",
+        foutmelding: `CASH: ${melding(e)} Controleer in CASH of de boeking bestaat en pas daarna de status aan.`,
+        laatste_run_id: runId,
+      });
+    }
     t.n_fout++;
   }
 }

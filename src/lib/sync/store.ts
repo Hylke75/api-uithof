@@ -134,13 +134,13 @@ export function supabaseStore(sb: SupabaseClient): SyncStore {
 
     async laadMappings() {
       const gb = check(await sb.from("map_grootboek").select("sem_grootboek, grootboekrekening, actief"));
-      const btw = check(await sb.from("map_btwcode").select("sem_btw_code, cash_btw_code"));
+      const btw = check(await sb.from("map_btwcode").select("sem_btw_code, cash_btw_grootboek"));
       const deb = check(await sb.from("map_debiteur").select("sem_debiteurnummer, cash_debiteurnummer"));
       return {
         grootboek: new Map(
           (gb ?? []).map((r) => [r.sem_grootboek, { grootboekrekening: r.grootboekrekening, actief: r.actief }]),
         ),
-        btwCode: new Map((btw ?? []).map((r) => [r.sem_btw_code, r.cash_btw_code])),
+        btwGrootboek: new Map((btw ?? []).map((r) => [r.sem_btw_code, r.cash_btw_grootboek])),
         debiteur: new Map((deb ?? []).map((r) => [r.sem_debiteurnummer, r.cash_debiteurnummer])),
       };
     },

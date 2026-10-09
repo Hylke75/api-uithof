@@ -1,4 +1,4 @@
-import type { CashBoeking } from "@/lib/cash/client";
+import { controleerBoeking, type CashBoeking } from "@/lib/cash/client";
 import type { SemFactuur } from "@/lib/sem/client";
 
 export interface GrootboekMapping {
@@ -9,10 +9,16 @@ export interface GrootboekMapping {
 export interface Mappings {
   /** SEM-grootboek -> CASH-grootboek. Zonder rij wordt het SEM-nummer 1-op-1 gebruikt. */
   grootboek: Map<string, GrootboekMapping>;
-  /** SEM-btw-code -> CASH-btw-code. Verplicht: elke gebruikte btw-code moet gemapt zijn. */
-  btwCode: Map<string, string>;
+  /** SEM-btw-code -> CASH-grootboekrekening voor de btw. Verplicht voor elke regel met btw. */
+  btwGrootboek: Map<string, string>;
   /** SEM-debiteurnummer -> CASH-debiteurnummer. Zonder rij wordt het SEM-nummer 1-op-1 gebruikt. */
   debiteur: Map<string, string>;
+}
+
+export interface CashInstellingen {
+  administratie: string;
+  dagboek: string;
+  debiteurenGrootboek: string;
 }
 
 export type MapResult = { ok: true; boeking: CashBoeking } | { ok: false; fouten: string[] };
@@ -34,7 +40,7 @@ export function totalen(factuur: SemFactuur): Totalen {
 }
 
 /** Vertaalt een SEM-factuur naar een CASH-boeking, of geeft alle fouten terug. */
-export function mapFactuur(factuur: SemFactuur, mappings: Mappings, administratie: string): MapResult {
+export function mapFactuur(factuur: SemFactuur, mappings: Mappings, cash: CashInstellingen): MapResult {
   const fouten: string[] = [...factuur.problemen];
 
   if (factuur.regels.length === 0 && fouten.length === 0) fouten.push("Factuur heeft geen regels");
@@ -48,14 +54,14 @@ export function mapFactuur(factuur: SemFactuur, mappings: Mappings, administrati
       fouten.push(`Grootboekrekening ${r.grootboek} staat in de mapping op inactief`);
       continue;
     }
-    const btwCode = mappings.btwCode.get(r.btwCode);
-    if (btwCode === undefined) {
-      fouten.push(`Geen CASH-btw-code gekoppeld aan SEM-btw-code "${r.btwCode || "(leeg)"}"`);
+    const btwGrootboek = mappings.btwGrootboek.get(r.btwCode) ?? "";
+    if (r.btwCents !== 0 && !btwGrootboek) {
+      fouten.push(`Geen CASH-btw-rekening gekoppeld aan SEM-btw-code "${r.btwCode || "(leeg)"}"`);
       continue;
     }
     regels.push({
       grootboekrekening: gb?.grootboekrekening ?? r.grootboek,
-      btwCode,
+      btwGrootboek,
       ...(r.kostenplaats ? { kostenplaats: r.kostenplaats } : {}),
       ...(r.kostendrager ? { kostendrager: r.kostendrager } : {}),
       omschrijving: r.omschrijving,
@@ -66,16 +72,18 @@ export function mapFactuur(factuur: SemFactuur, mappings: Mappings, administrati
 
   if (fouten.length > 0) return { ok: false, fouten: [...new Set(fouten)] };
 
-  return {
-    ok: true,
-    boeking: {
-      administratie,
-      boekdatum: factuur.factuurdatum,
-      factuurnummer: factuur.factuurnummer,
-      debiteurnummer,
-      omschrijving: `${factuur.soort === "creditnota" ? "Creditnota" : "Factuur"} ${factuur.factuurnummer}`,
-      totaalInclCents: totalen(factuur).inclCents,
-      regels,
-    },
+  const boeking: CashBoeking = {
+    administratie: cash.administratie,
+    dagboek: cash.dagboek,
+    debiteurenGrootboek: cash.debiteurenGrootboek,
+    boekdatum: factuur.factuurdatum,
+    factuurnummer: factuur.factuurnummer,
+    debiteurnummer,
+    omschrijving: `${factuur.soort === "creditnota" ? "Creditnota" : "Factuur"} ${factuur.factuurnummer}`,
+    totaalInclCents: totalen(factuur).inclCents,
+    regels,
   };
+  const formaat = controleerBoeking(boeking);
+  if (formaat.length > 0) return { ok: false, fouten: formaat };
+  return { ok: true, boeking };
 }

@@ -13,9 +13,11 @@ const schema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   SEM_BASE_URL: z.url(),
   SEM_API_KEY: z.string().min(1),
-  CASH_BASE_URL: z.url(),
+  CASH_BASE_URL: z.url().default("https://www.cashweb.nl/api/4.0"),
   CASH_API_KEY: z.string().min(1),
   CASH_ADMINISTRATIE: z.string().min(1),
+  CASH_DAGBOEK: z.string().min(1).max(6),
+  CASH_GB_DEBITEUREN: z.string().min(1).max(6),
 });
 
 export type Env = z.infer<typeof schema>;

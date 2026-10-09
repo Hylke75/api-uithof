@@ -14,7 +14,11 @@ export function startSync(trigger: "cron" | "handmatig") {
     cash: createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY }),
     dryRun: e.SYNC_DRY_RUN,
     startDate: e.SYNC_START_DATE,
-    administratie: e.CASH_ADMINISTRATIE,
+    cashInstellingen: {
+      administratie: e.CASH_ADMINISTRATIE,
+      dagboek: e.CASH_DAGBOEK,
+      debiteurenGrootboek: e.CASH_GB_DEBITEUREN,
+    },
     trigger,
   });
 }

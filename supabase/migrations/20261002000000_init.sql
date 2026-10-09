@@ -50,11 +50,11 @@ create table public.map_grootboek (
   updated_at         timestamptz not null default now()
 );
 
--- Mapping: SEM-btw-code (bijv. 'Hoog') -> CASH-btw-code. Verplicht voor elke gebruikte code;
--- een lege SEM-btw-code heeft sleutel ''.
+-- Mapping: SEM-btw-code (bijv. 'Hoog') -> CASH-grootboekrekening waarop de btw geboekt wordt.
+-- Verplicht voor elke btw-code die met een btw-bedrag voorkomt; een lege code heeft sleutel ''.
 create table public.map_btwcode (
-  sem_btw_code   text primary key,
-  cash_btw_code  text not null,
+  sem_btw_code        text primary key,
+  cash_btw_grootboek  text not null,
   omschrijving   text,
   updated_at     timestamptz not null default now()
 );

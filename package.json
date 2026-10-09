@@ -9,7 +9,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "sem:verken": "tsx --env-file-if-exists=.env.local scripts/sem-verken.ts"
+    "sem:verken": "tsx --env-file-if-exists=.env.local scripts/sem-verken.ts",
+    "cash:verken": "tsx --env-file-if-exists=.env.local scripts/cash-verken.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

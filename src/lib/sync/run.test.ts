@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CashBoeking, CashClient } from "@/lib/cash/client";
+import { CashAfgewezenError, type CashBoeking, type CashClient } from "@/lib/cash/client";
 import type { SemBatch, SemClient, SemInvoice, SemJournaalpost } from "@/lib/sem/client";
 import type { Mappings } from "./mapping";
 import { runSync } from "./run";
@@ -43,9 +43,9 @@ function memoryStore(mappings: Mappings, vorigeWindowTo: string | null = null) {
 
 const mappings: Mappings = {
   grootboek: new Map([["8100", { grootboekrekening: "8150", actief: true }]]),
-  btwCode: new Map([
-    ["Hoog", "2"],
-    ["Laag", "1"],
+  btwGrootboek: new Map([
+    ["Hoog", "1510"],
+    ["Laag", "1520"],
   ]),
   debiteur: new Map(),
 };
@@ -94,11 +94,11 @@ function semMet(opts: { totaalIn?: number; extra?: Partial<SemJournaalpost>; fac
   return { sem, vensters };
 }
 
-function cashSpy(fail = false) {
+function cashSpy(fout?: Error) {
   const geboekt: CashBoeking[] = [];
   const client: CashClient = {
     async boekFactuur(b) {
-      if (fail) throw new Error("timeout");
+      if (fout) throw fout;
       geboekt.push(b);
       return { boekingId: `B${geboekt.length}` };
     },
@@ -106,7 +106,12 @@ function cashSpy(fail = false) {
   return { client, geboekt };
 }
 
-const basis = { startDate: "2026-01-01", administratie: "TEST", trigger: "cron" as const, now: new Date("2026-10-02T01:00:00Z") };
+const basis = {
+  startDate: "2026-01-01",
+  cashInstellingen: { administratie: "demo", dagboek: "VERK", debiteurenGrootboek: "1300" },
+  trigger: "cron" as const,
+  now: new Date("2026-10-02T01:00:00Z"),
+};
 
 describe("runSync", () => {
   it("boekt niets in proefmodus maar legt de boeking vast", async () => {
@@ -120,10 +125,10 @@ describe("runSync", () => {
     const row = facturen.get("1877")!;
     expect(row).toMatchObject({ status: "proef", factuurnummer: "10319", sem_batch_number: 41, totaal_incl_cents: 126450 });
     const boeking = row.cash_payload as CashBoeking;
-    expect(boeking.debiteurnummer).toBe("10001");
-    expect(boeking.regels.map((x) => [x.grootboekrekening, x.btwCode])).toEqual([
-      ["8000", "2"],
-      ["8150", "1"],
+    expect(boeking).toMatchObject({ debiteurnummer: "10001", dagboek: "VERK", debiteurenGrootboek: "1300" });
+    expect(boeking.regels.map((x) => [x.grootboekrekening, x.btwGrootboek])).toEqual([
+      ["8000", "1510"],
+      ["8150", "1520"],
     ]);
   });
 
@@ -153,7 +158,7 @@ describe("runSync", () => {
   });
 
   it("boekt niet als de totalen niet kloppen of een btw-mapping ontbreekt", async () => {
-    const { store, facturen } = memoryStore({ ...mappings, btwCode: new Map([["Hoog", "2"]]) });
+    const { store, facturen } = memoryStore({ ...mappings, btwGrootboek: new Map([["Hoog", "1510"]]) });
     const cash = cashSpy();
     const r = await runSync({ ...basis, store, sem: semMet({ totaalIn: 1300 }).sem, cash: cash.client, dryRun: false });
 
@@ -161,6 +166,14 @@ describe("runSync", () => {
     expect(cash.geboekt).toHaveLength(0);
     expect(facturen.get("1877")!.foutmelding).toContain("wijkt af van het factuurtotaal");
     expect(facturen.get("1877")!.foutmelding).toContain('SEM-btw-code "Laag"');
+  });
+
+  it("boekt niet als een nummer niet in CASH past", async () => {
+    const { store, facturen } = memoryStore({ ...mappings, debiteur: new Map([["10001", "D-10001"]]) });
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cashSpy().client, dryRun: true });
+
+    expect(r).toMatchObject({ n_proef: 0, n_fout: 1 });
+    expect(facturen.get("1877")!.foutmelding).toContain("max. 6 cijfers");
   });
 
   it("boekt niet opnieuw als de uitkomst van een eerdere boekpoging onbekend is", async () => {
@@ -173,12 +186,24 @@ describe("runSync", () => {
     expect(r.n_fout).toBe(1);
   });
 
-  it("registreert een CASH-fout per factuur en gaat door", async () => {
+  it("zet een door CASH afgewezen factuur op fout, zodat hij later opnieuw geprobeerd wordt", async () => {
     const { store, facturen } = memoryStore(mappings);
-    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cashSpy(true).client, dryRun: false });
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cashSpy(new CashAfgewezenError("Ongeldige waarde 0201=8000")).client, dryRun: false });
 
     expect(r.status).toBe("partial");
-    expect(facturen.get("1877")).toMatchObject({ status: "fout", foutmelding: "CASH: timeout" });
+    expect(facturen.get("1877")).toMatchObject({ status: "fout", foutmelding: "CASH: Ongeldige waarde 0201=8000" });
+  });
+
+  it("laat een factuur op nieuw staan als de uitkomst bij CASH onbekend is, en boekt hem niet opnieuw", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    const { sem } = semMet();
+    await runSync({ ...basis, store, sem, cash: cashSpy(new Error("timeout")).client, dryRun: false });
+    expect(facturen.get("1877")!.status).toBe("nieuw");
+    expect(facturen.get("1877")!.foutmelding).toContain("timeout");
+
+    const cash = cashSpy();
+    await runSync({ ...basis, store, sem, cash: cash.client, dryRun: false });
+    expect(cash.geboekt).toHaveLength(0);
   });
 
   it("slaat facturen van vóór de startdatum over", async () => {

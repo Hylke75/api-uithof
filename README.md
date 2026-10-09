@@ -7,9 +7,9 @@ geboekt. Dit vervangt de handmatige import in CASH.
 - **Supabase**: logboek van runs, batches, facturenhistorie en mappingtabellen
 - **GitHub**: versiebeheer
 
-> **Status:** de SEM-koppeling is gebouwd op basis van de API-documentatie en getest met nagebootste
-> antwoorden. Hij moet nog gecontroleerd worden met echte data uit de testomgeving (`npm run sem:verken`).
-> De CASH-koppeling is nog een *stub*. De **proefmodus staat standaard aan**.
+> **Status:** de SEM- en CASH-koppeling zijn gebouwd op basis van de API-documentatie en getest met
+> nagebootste antwoorden. Ze moeten nog gecontroleerd worden met echte data (`npm run sem:verken`,
+> `npm run cash:verken` en een proefboeking in de CASH-testadministratie). De **proefmodus staat standaard aan**.
 
 ## Werkwijze voor De Uithof
 
@@ -42,11 +42,14 @@ geboekt. Dit vervangt de handmatige import in CASH.
 
 | Tabel | Wat | Verplicht? |
 |---|---|---|
-| `map_btwcode` | SEM-btw-code (bijv. `Hoog`) → CASH-btw-code | **Ja**, voor elke gebruikte code. Een lege code heeft sleutel `''` |
+| `map_btwcode` | SEM-btw-code (bijv. `Hoog`) → CASH-grootboekrekening voor de btw | **Ja**, voor elke code die met een btw-bedrag voorkomt. Een lege code heeft sleutel `''` |
 | `map_grootboek` | SEM-grootboek → CASH-grootboek | Nee. Zonder rij wordt het nummer 1-op-1 overgenomen |
 | `map_debiteur` | SEM-debiteurnummer → CASH-debiteurnummer | Nee. Zonder rij wordt het nummer 1-op-1 overgenomen |
 
-`npm run sem:verken` laat zien welke btw-codes en grootboekrekeningen in een batch voorkomen.
+Daarnaast via omgevingsvariabelen: `CASH_DAGBOEK` (verkoopdagboek) en `CASH_GB_DEBITEUREN` (debiteurenrekening).
+
+`npm run sem:verken` laat zien welke btw-codes en grootboekrekeningen in een batch voorkomen;
+`npm run cash:verken -- <admin>` toont de dagboeken en grootboekrekeningen in CASH.
 
 ## Statussen van facturen
 
@@ -67,6 +70,8 @@ npm test                     # unit tests
 npm run typecheck
 npm run sem:verken -- 2026-09-01      # bekijk batches/journaalposten uit SEM (alleen lezen)
 npm run sem:verken -- 2026-09-01 41   # batch 41 in detail
+npm run cash:verken                   # administraties die de CASH-key kan zien (alleen lezen)
+npm run cash:verken -- demo           # + dagboeken en grootboekrekeningen
 npm run dev                  # beheerpagina op http://localhost:3000
 ```
 
@@ -95,16 +100,32 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync
 - Betalingen terugzetten kan later via `api/Invoices/AddInvoicePayments`
   (`InvoiceID` of `InvoiceNumber`, `Amount`, `PaymentDateTime`, `PaymentRegisterID`).
 
-## CASH
+## CASH-API (REST 4.0)
 
-- Het account `hylke@linkandlead.nl` (Sporttainment Center De Uithof B.V.) is een
-  **API-gebruiker**, maar heeft nog **geen administratie gekoppeld**. Zonder koppeling geeft
-  elke aanroep de fout `1002 Unauthorized Access`. Een beheerder van De Uithof (of de accountant)
-  moet de administratie koppelen via Gebruikersbeheer.
-- **CASH API 3.0** is SOAP/XML met genummerde aanvragen en records. Er bestaat ook een **API 4.0 (REST)**.
-  Die heeft de voorkeur als hij verkoopboekingen ondersteunt.
-- De CASH-koppeling zit achter de interface `CashClient` (`src/lib/cash/client.ts`). Of het
-  SOAP of REST wordt, verandert dus niets aan de sync-logica.
+- Swagger: https://www.cashweb.nl/api4.0/ · recordindeling: https://cash.nl/knowledge/recordindeling-cash-financieel
+- Base URL `https://www.cashweb.nl/api/4.0`, header `Authorization: <API key>` (plus `Accept`, `Content-Type`,
+  `Cache-Control: no-cache`, `Sec-Fetch-Mode: cors`, die Swagger verplicht stelt).
+- API-gebruiker: hylke@linkandlead.nl (nr. 6), relatie 54852 Sporttainment Center De Uithof B.V.
+  De key staat in CashWeb > Gebruikersoverzicht > gebruiker > tab **Api** (kopieer-icoon; **niet** op Genereer klikken,
+  dan wordt de huidige key ongeldig).
+- Administratie: voorlopig `demo`. Controleer met `npm run cash:verken` of dat de juiste (test)administratie is;
+  voor live is de echte code van De Uithof nodig.
+- Een factuur wordt geïmporteerd met `POST /import` als set **record 301** (grootboekmutaties) in het verkoopdagboek,
+  die samen op nul sluiten:
+
+  | Regel | F0201 grootboek | Overige velden | F0307 bedrag |
+  |---|---|---|---|
+  | Debiteur | `CASH_GB_DEBITEUREN` | F0101 relatienr, F0309 factuurnr | + totaal incl. btw |
+  | Omzet (per regel) | SEM-grootboek (of mapping) | F0911 kostenplaats | − bedrag excl. btw |
+  | Btw (per btw-rekening) | `map_btwcode` | | − btw-bedrag |
+
+  Elke regel heeft daarnaast F0901 dagboek, F0302 boekdatum (JJMMDD) en F0303 stuknummer (= factuurnummer).
+  Bij een creditnota zijn de tekens omgekeerd.
+- Antwoorden: `201` = verwerkt; `202` = Pending met transactie-id, wordt via `GET /transaction/{id}` nagevraagd;
+  `4xx` = afgewezen (status `fout`, de volgende run probeert opnieuw). Bij een time-out, serverfout of blijvende
+  Pending is de uitkomst onbekend: de factuur blijft op `nieuw` staan en wordt **niet** automatisch opnieuw geboekt.
+- Beperkingen van CASH-velden: debiteur- en factuurnummer max. 6 cijfers, grootboek max. 6 tekens, kostenplaats max. 3
+  tekens, omschrijving max. 25 tekens (wordt afgekapt). Past iets niet, dan wordt de factuur niet geboekt.
 
 ## Beveiliging
 
@@ -124,11 +145,15 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync
 ## Openstaande punten
 
 - [ ] SEM: de omzetting controleren met echte journaalposten uit de testomgeving (`npm run sem:verken`)
-- [ ] SEM: de btw-codes en grootboekrekeningen van De Uithof in de mapping zetten
-- [ ] CASH: administratie van De Uithof koppelen aan de API-gebruiker
-- [ ] CASH: API 4.0 (REST)-documentatie of WSDL en recordindeling opvragen bij CASH-support, en de `CashClient` bouwen
-- [ ] CASH: debiteuren. Bestaan de SEM-debiteurnummers al in CASH, of moeten nieuwe debiteuren aangemaakt worden (via SEM `GetRelation`)?
-- [ ] CASH: is er een duplicaatcontrole op factuurnummer? Zo is een time-out veilig af te handelen
+- [ ] CASH: met `npm run cash:verken` controleren of `demo` de juiste testadministratie is
+- [ ] CASH: één proefboeking in de testadministratie, en in CASH controleren:
+  - boekt CASH de btw zelf (op basis van de grootboekrekening)? Dan moeten de aparte btw-regels eruit
+  - datumformaat (JJMMDD) en bedragnotatie (komma) kloppen
+  - debiteur, factuur en openstaande post zijn goed aangemaakt
+- [ ] Mapping van de boekhouding (Vanessa): verkoopdagboek, debiteurenrekening, btw-rekening per SEM-btw-code,
+  afwijkende grootboekrekeningen, kostenplaatsen (CASH max. 3 tekens)
+- [ ] Debiteuren: bestaan de SEM-debiteurnummers al in CASH (max. 6 cijfers)? Zo niet: automatisch aanmaken
+  (record 101 met gegevens uit SEM `GetRelation`) of `map_debiteur` vullen
 - [ ] Startdatum: eerste factuurdatum die niet meer handmatig in CASH komt
 - [ ] Betalingen uit CASH terugzetten in SEM (`AddInvoicePayments`): gewenst?
-- [ ] Supabase-organisatie (kosten) en contactpersoon De Uithof voor de parallel-run
+- [ ] Supabase-organisatie (kosten), Vercel-project en contactpersoon De Uithof voor de parallel-run
