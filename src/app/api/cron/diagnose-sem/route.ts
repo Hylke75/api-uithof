@@ -10,7 +10,7 @@ export const maxDuration = 60;
  * aantallen, eerste/laatste batch) zonder iets op te slaan. Beveiligd met CRON_SECRET.
  */
 
-function samenvatting(body: unknown) {
+function samenvatting(body: unknown, alles = false) {
   if (body == null || typeof body !== "object") return { type: typeof body, waarde: String(body).slice(0, 300) };
   const o = body as Record<string, unknown>;
   const lijsten = Object.fromEntries(
@@ -18,7 +18,7 @@ function samenvatting(body: unknown) {
       .filter(([, v]) => Array.isArray(v))
       .map(([k, v]) => {
         const arr = v as Record<string, unknown>[];
-        return [k, { aantal: arr.length, velden: arr[0] ? Object.keys(arr[0]) : [], eerste: arr[0] ?? null, laatste: arr.at(-1) ?? null }];
+        return [k, { aantal: arr.length, velden: arr[0] ? Object.keys(arr[0]) : [], eerste: arr[0] ?? null, laatste: arr.at(-1) ?? null, ...(alles ? { items: arr.slice(0, 50) } : {}) }];
       }),
   );
   return { sleutels: Object.keys(o), lijsten, overig: Object.fromEntries(Object.entries(o).filter(([, v]) => !Array.isArray(v))) };
@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
   const key = leesEnv("SEM_API_KEY") ?? "";
   const van = req.nextUrl.searchParams.get("van") ?? "2000-01-01";
   const batch = req.nextUrl.searchParams.get("batch");
+  const alles = req.nextUrl.searchParams.get("alles") === "1";
 
   async function post(pad: string, body: unknown) {
     const start = Date.now();
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
       } catch {
         /* geen JSON */
       }
-      return { pad, verzoek: body, http: res.status, ms: Date.now() - start, antwoord: json ? samenvatting(json) : tekst.slice(0, 500) };
+      return { pad, verzoek: body, http: res.status, ms: Date.now() - start, antwoord: json ? samenvatting(json, alles) : tekst.slice(0, 500) };
     } catch (e) {
       return { pad, verzoek: body, fout: e instanceof Error ? e.message : String(e) };
     }
