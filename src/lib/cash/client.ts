@@ -164,11 +164,17 @@ export function createCashClient(config: CashConfig) {
   const base = config.baseUrl.replace(/\/+$/, "");
 
   async function request(pad: string, init: RequestInit = {}): Promise<{ status: number; body: unknown }> {
-    const res = await fetch(`${base}${pad}`, {
+    let res = await fetch(`${base}${pad}`, {
       ...init,
       headers: { ...HEADERS, Authorization: config.apiKey },
+      redirect: "manual",
       signal: AbortSignal.timeout(config.timeoutMs ?? 60_000),
     });
+    // CASH verwijst grote antwoorden door naar externe opslag (Azure); die weigert onze sleutel.
+    const locatie = res.headers.get("location");
+    if (res.status >= 300 && res.status < 400 && locatie) {
+      res = await fetch(new URL(locatie, `${base}/`), { signal: AbortSignal.timeout(config.timeoutMs ?? 60_000) });
+    }
     const tekst = await res.text();
     let body: unknown = tekst;
     try {
