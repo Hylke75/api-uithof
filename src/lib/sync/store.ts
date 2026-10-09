@@ -53,6 +53,12 @@ export interface SyncStore {
   laadMappings(): Promise<Mappings>;
 }
 
+/** Boekhoudinstellingen uit de tabel `instellingen` (sleutel -> waarde). */
+export async function laadInstellingen(sb: SupabaseClient): Promise<Record<string, string>> {
+  const data = check(await sb.from("instellingen").select("sleutel, waarde"));
+  return Object.fromEntries((data ?? []).map((r) => [r.sleutel, r.waarde]));
+}
+
 function check<T>(res: { data: T; error: { message: string } | null }): T {
   if (res.error) throw new Error(res.error.message);
   return res.data;

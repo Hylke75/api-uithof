@@ -92,6 +92,11 @@ export interface SemFactuur {
   batchNumber: number;
   companyCode: string | null;
   regels: SemFactuurRegel[];
+  /**
+   * Debiteurenrekening uit de debiteurregel van SEM (bijv. 1300 gewoon, 1320 voorschot);
+   * null als SEM geen herkenbare debiteurregel levert.
+   */
+  debiteurGrootboek: string | null;
   /** Totalen uit de factuurkop (GetInvoices), om de regels tegen te controleren. */
   totaalExclCents: number | null;
   totaalInclCents: number | null;

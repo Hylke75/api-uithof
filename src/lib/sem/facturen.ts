@@ -91,6 +91,17 @@ export function bouwFacturen(
     }
     if (regels.length === 0) problemen.push("Geen omzetregels gevonden in de journaalposten.");
 
+    // De debiteurregel: een post zonder InvoiceLineID met een debiteurnummer, waarvan het saldo
+    // gelijk is aan het factuurtotaal (debet bij een factuur, credit bij een creditnota).
+    const somInclRegels = regels.reduce((s, r) => s + r.bedragExclCents + r.btwCents, 0);
+    const debiteurPost = lijst.find(
+      (p) =>
+        p.InvoiceLineID == null &&
+        p.DebtorNumber &&
+        p.AccountCode != null &&
+        centen(p.DebitAmount) - centen(p.CreditAmount) === somInclRegels,
+    );
+
     const totaalExclCents = kop?.TotalAmountEx != null ? centen(kop.TotalAmountEx) : null;
     const totaalInclCents = kop?.TotalAmountIn != null ? centen(kop.TotalAmountIn) : null;
     const somExcl = regels.reduce((s, r) => s + r.bedragExclCents, 0);
@@ -119,6 +130,7 @@ export function bouwFacturen(
       factuurdatum,
       soort: (totaalInclCents ?? somIncl) < 0 ? "creditnota" : "factuur",
       debiteurnummer,
+      debiteurGrootboek: debiteurPost ? String(debiteurPost.AccountCode).trim() : null,
       batchNumber: batch.BatchNumber,
       companyCode: batch.CompanyCode,
       regels,

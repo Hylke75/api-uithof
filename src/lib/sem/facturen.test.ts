@@ -81,6 +81,7 @@ describe("bouwFacturen", () => {
       factuurdatum: "2026-09-30",
       soort: "factuur",
       debiteurnummer: "10001",
+      debiteurGrootboek: "1300",
       batchNumber: 41,
       totaalInclCents: 126450,
       problemen: [],

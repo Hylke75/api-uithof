@@ -51,7 +51,7 @@ const mappings: Mappings = {
 };
 
 /** Eén batch met één factuur (2 omzetregels), zoals SEM hem levert. */
-function semMet(opts: { totaalIn?: number; extra?: Partial<SemJournaalpost>; factuurdatum?: string; falen?: boolean } = {}) {
+function semMet(opts: { totaalIn?: number; extra?: Partial<SemJournaalpost>; factuurdatum?: string; falen?: boolean; debiteurRekening?: string } = {}) {
   const datum = opts.factuurdatum ?? "2026-09-30T00:00:00";
   const regel = (id: number, acc: number, ex: number, tax: number, code: string): SemJournaalpost => ({
     JournalEntryID: id,
@@ -85,7 +85,12 @@ function semMet(opts: { totaalIn?: number; extra?: Partial<SemJournaalpost>; fac
       return [{ BatchNumber: 41, CompanyCode: null, CompanyID: 1, CreatedAt: null, Name: "Week 40" } satisfies SemBatch];
     },
     async fetchJournaalposten() {
-      return [regel(1, 8000, 1000, 210, "Hoog"), regel(2, 8100, 50, 4.5, "Laag")];
+      const posten = [regel(1, 8000, 1000, 210, "Hoog"), regel(2, 8100, 50, 4.5, "Laag")];
+      if (opts.debiteurRekening) {
+        // Debiteurregel zoals SEM die levert: geen InvoiceLineID, debet = totaal incl. btw.
+        posten.push({ ...regel(3, 0, 0, 0, ""), InvoiceLineID: null, AccountCode: opts.debiteurRekening, CreditAmount: 0, DebitAmount: 1264.5, BaseAmount: null, TaxAmount: null, TaxCode: null });
+      }
+      return posten;
     },
     async fetchFacturen() {
       return [kop];
@@ -130,6 +135,12 @@ describe("runSync", () => {
       ["8000", "1510"],
       ["8150", "1520"],
     ]);
+  });
+
+  it("neemt de debiteurenrekening van SEM over (voorschotfactuur op 1320)", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    await runSync({ ...basis, store, sem: semMet({ debiteurRekening: "1320" }).sem, cash: cashSpy().client, dryRun: true });
+    expect((facturen.get("1877")!.cash_payload as CashBoeking).debiteurenGrootboek).toBe("1320");
   });
 
   it("boekt live en boekt een geboekte factuur nooit opnieuw", async () => {

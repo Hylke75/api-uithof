@@ -72,10 +72,15 @@ export function mapFactuur(factuur: SemFactuur, mappings: Mappings, cash: CashIn
 
   if (fouten.length > 0) return { ok: false, fouten: [...new Set(fouten)] };
 
+  // Debiteurenrekening uit SEM (1300 gewoon / 1320 voorschot), anders de ingestelde rekening.
+  const debiteurenGrootboek = factuur.debiteurGrootboek
+    ? (mappings.grootboek.get(factuur.debiteurGrootboek)?.grootboekrekening ?? factuur.debiteurGrootboek)
+    : cash.debiteurenGrootboek;
+
   const boeking: CashBoeking = {
     administratie: cash.administratie,
     dagboek: cash.dagboek,
-    debiteurenGrootboek: cash.debiteurenGrootboek,
+    debiteurenGrootboek,
     boekdatum: factuur.factuurdatum,
     factuurnummer: factuur.factuurnummer,
     debiteurnummer,
