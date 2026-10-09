@@ -24,16 +24,27 @@ const schema = z.object({
 
 export type Env = z.infer<typeof schema>;
 
+/** Eén omgevingsvariabele, zonder spaties/regeleindes eromheen (plakfouten in Vercel). */
+export function leesEnv(naam: string): string | undefined {
+  const v = process.env[naam]?.trim();
+  return v ? v : undefined;
+}
+
+/** Alle omgevingsvariabelen, getrimd; lege waarden tellen als niet ingesteld. */
+function getrimdeEnv(): Record<string, string | undefined> {
+  return Object.fromEntries(Object.keys(process.env).map((k) => [k, leesEnv(k)]));
+}
+
 let cached: Env | undefined;
 
 /** Namen van ontbrekende of ongeldige instellingen (nooit de waarden zelf), voor de beheerpagina. */
 export function ontbrekendeInstellingen(): string[] {
-  const r = schema.safeParse(process.env);
+  const r = schema.safeParse(getrimdeEnv());
   return r.success ? [] : [...new Set(r.error.issues.map((i) => String(i.path[0])))];
 }
 
 /** Leest en valideert de omgevingsvariabelen; faalt hard bij ontbrekende of ongeldige waarden. */
 export function env(): Env {
-  cached ??= schema.parse(process.env);
+  cached ??= schema.parse(getrimdeEnv());
   return cached;
 }

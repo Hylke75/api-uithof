@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createSemClient } from "@/lib/sem/client";
+import { leesEnv } from "@/lib/env";
 import { db } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -13,9 +14,9 @@ export const maxDuration = 60;
 const CASH_HEADERS = { Accept: "*/*", "Content-Type": "application/json;charset=UTF-8", "Cache-Control": "no-cache", "Sec-Fetch-Mode": "cors" };
 
 async function cashGet(pad: string) {
-  const base = (process.env.CASH_BASE_URL || "https://www.cashweb.nl/api/4.0").replace(/\/+$/, "");
+  const base = (leesEnv("CASH_BASE_URL") || "https://www.cashweb.nl/api/4.0").replace(/\/+$/, "");
   const res = await fetch(`${base}${pad}`, {
-    headers: { ...CASH_HEADERS, Authorization: process.env.CASH_API_KEY ?? "" },
+    headers: { ...CASH_HEADERS, Authorization: leesEnv("CASH_API_KEY") ?? "" },
     signal: AbortSignal.timeout(30_000),
     cache: "no-store",
   });
@@ -46,8 +47,8 @@ function Resultaat({ titel, r, children }: { titel: string; r: { ok: boolean; fo
 }
 
 export default async function Controle() {
-  const admin = process.env.CASH_ADMINISTRATIE ?? "";
-  const sinds = process.env.SYNC_START_DATE ?? "2026-01-01";
+  const admin = leesEnv("CASH_ADMINISTRATIE") ?? "";
+  const sinds = leesEnv("SYNC_START_DATE") ?? "2026-01-01";
 
   const [supa, batches, adms, dagboeken, grootboek] = await Promise.all([
     probeer(async () => {
@@ -55,7 +56,7 @@ export default async function Controle() {
       if (error) throw new Error(error.message);
       return count ?? 0;
     }),
-    probeer(() => createSemClient({ baseUrl: process.env.SEM_BASE_URL ?? "", apiKey: process.env.SEM_API_KEY ?? "" }).fetchBatches(sinds)),
+    probeer(() => createSemClient({ baseUrl: leesEnv("SEM_BASE_URL") ?? "", apiKey: leesEnv("SEM_API_KEY") ?? "" }).fetchBatches(sinds)),
     probeer(() => cashGet("/administrations")),
     probeer(() => cashGet(`/get/index/0901?admin=${encodeURIComponent(admin)}`)),
     probeer(() => cashGet(`/get/index/0201?admin=${encodeURIComponent(admin)}`)),
@@ -76,7 +77,7 @@ export default async function Controle() {
         <p>Verbonden; {supa.ok ? supa.data : 0} runs in het logboek.</p>
       </Resultaat>
 
-      <Resultaat titel={`Smart Event Manager (${process.env.SEM_BASE_URL ?? "?"})`} r={batches}>
+      <Resultaat titel={`Smart Event Manager (${leesEnv("SEM_BASE_URL") ?? "?"})`} r={batches}>
         {batches.ok && (
           <>
             <p>{batches.data.length} batch(es) aangemaakt of gewijzigd sinds {sinds}.</p>
@@ -136,7 +137,7 @@ export default async function Controle() {
 
       <Resultaat titel={`CASH: dagboeken in ${admin}`} r={dagboeken}>
         <p className="muted">
-          Ingesteld verkoopdagboek: <code>{process.env.CASH_DAGBOEK || "(leeg)"}</code>
+          Ingesteld verkoopdagboek: <code>{leesEnv("CASH_DAGBOEK") ?? "(leeg; zie instellingen)"}</code>
         </p>
         <div className="table-wrap">
           <table>
@@ -164,7 +165,7 @@ export default async function Controle() {
 
       <Resultaat titel={`CASH: grootboekrekeningen in ${admin}`} r={grootboek}>
         <p className="muted">
-          Ingestelde debiteurenrekening: <code>{process.env.CASH_GB_DEBITEUREN || "(leeg)"}</code>
+          Ingestelde debiteurenrekening: <code>{leesEnv("CASH_GB_DEBITEUREN") ?? "1300 (uit instellingen)"}</code>
         </p>
         <details>
           <summary>{grootboek.ok ? rijen(grootboek.data?.R0201).length : 0} rekeningen tonen</summary>
