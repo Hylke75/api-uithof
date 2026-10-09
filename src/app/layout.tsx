@@ -10,7 +10,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="nl">
-      <body>{children}</body>
+      <body>
+        <a href="#inhoud" className="sr-only">
+          Naar de inhoud
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

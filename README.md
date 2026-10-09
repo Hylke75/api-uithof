@@ -11,6 +11,14 @@ geboekt. Dit vervangt de handmatige import in CASH.
 > nagebootste antwoorden. Ze moeten nog gecontroleerd worden met echte data (`npm run sem:verken`,
 > `npm run cash:verken` en een proefboeking in de CASH-testadministratie). De **proefmodus staat standaard aan**.
 
+## Beheerpaneel
+
+Ontwerp volgens `design-brief/` (tokens in `src/app/globals.css`). Pagina's: Overzicht, Facturen
+(+ detail en Voorbeeld per periode), Batches, Runs, Instellingen, Logboek en Verbindingen controleren.
+Alle gegevens komen uit Supabase/SEM/CASH; mislukt het ophalen, dan toont het paneel een foutstatus
+en nooit nepnullen. "Verbindingen controleren" is alleen lezend; "Sync nu starten" gebruikt dezelfde
+sync als de cron, en de proefmodus wordt op de server bepaald (`SYNC_DRY_RUN`).
+
 ## Werkwijze voor De Uithof
 
 1. Een medewerker maakt in SEM met de hand een journaalpostbatch aan. Via de API kan dat niet.
