@@ -201,6 +201,32 @@ export function createCashClient(config: CashConfig) {
       return body;
     },
 
+    /** Grootboekmutaties (record 301) van één dagboek en stuknummer in een periode JJPP. */
+    async mutaties(admin: string, periode: string, dagboek: string, stuk: string): Promise<Veld[]> {
+      const q = `?admin=${encodeURIComponent(admin)}&params=${encodeURIComponent(`${periode}|${periode}`)}`;
+      const { status, body } = await request(`/get/index/301T${q}`);
+      if (status !== 200) throw new CashAfgewezenError(`CASH 301T: HTTP ${status} ${kort(body)}`);
+      const r = (body as { R0301?: unknown } | null)?.R0301;
+      const lijst = (r == null ? [] : Array.isArray(r) ? r : Object.values(r as object)) as Veld[];
+      return lijst.filter((m) => m.F0901 === dagboek && Number(m.F0303) === Number(stuk));
+    },
+
+    /** Losse record-301-regels importeren (bijv. een correctie). Moeten samen op nul sluiten. */
+    async importeerRecords(admin: string, records: Veld[]) {
+      const saldo = records.reduce((s, r) => s + Math.round(Number(r.F0307.replace(",", ".")) * 100), 0);
+      if (saldo !== 0) throw new CashAfgewezenError(`Correctie sluit niet (saldo ${saldo} cent)`);
+      const { status, body } = await request("/import", {
+        method: "POST",
+        body: JSON.stringify({ admin, format: 0, content: { cash: records.map((r) => ({ R301: [r] })) } }),
+      });
+      if (status === 202) {
+        const id = (body as { transaction?: string } | null)?.transaction;
+        if (id) await wachtOpTransactie(id);
+        return;
+      }
+      if (status !== 200 && status !== 201) throw new CashAfgewezenError(`HTTP ${status} ${kort(body)}`);
+    },
+
     async boekFactuur(boeking: CashBoeking) {
       const problemen = controleerBoeking(boeking);
       if (problemen.length) throw new CashAfgewezenError(problemen.join("; "));

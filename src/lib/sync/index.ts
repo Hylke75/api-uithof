@@ -1,4 +1,4 @@
-import { createCashClient } from "@/lib/cash/client";
+import { cashBedrag, cashDatum, createCashClient } from "@/lib/cash/client";
 import { env } from "@/lib/env";
 import { createSemClient, type SemClient } from "@/lib/sem/client";
 import { db } from "@/lib/supabase";
@@ -27,6 +27,55 @@ export async function startSync(trigger: "cron" | "handmatig") {
     },
     trigger,
   });
+}
+
+/**
+ * Herstelt een mislukte testboeking in "demo": boekt de tegenboeking van alle regels die CASH bij
+ * het oude boekstuk heeft staan (zodat dat op nul uitkomt), zet de factuur terug en boekt hem
+ * opnieuw volgens de huidige instellingen.
+ */
+export async function herstelTestboeking(batchNumber: number, invoiceId: number) {
+  const e = env();
+  if (e.CASH_ADMINISTRATIE !== TEST_ADMINISTRATIE) {
+    throw new Error(`Herstel geweigerd: administratie is "${e.CASH_ADMINISTRATIE}", alleen "${TEST_ADMINISTRATIE}" is toegestaan.`);
+  }
+  const sb = db();
+  const { data, error } = await sb
+    .from("sem_facturen")
+    .select("status, cash_boeking_id, factuurdatum")
+    .eq("sem_factuur_id", String(invoiceId))
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error(`Factuur ${invoiceId} staat niet in de database.`);
+
+  let tegengeboekt = 0;
+  const [dagboek, stuk] = String(data.cash_boeking_id ?? "").split(" ")[0].split("/");
+  if (data.status === "geboekt" && dagboek && stuk) {
+    const cash = createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY });
+    const datum = String(data.factuurdatum);
+    const oud = await cash.mutaties(TEST_ADMINISTRATIE, cashDatum(datum).slice(0, 4), dagboek, stuk);
+    if (oud.length > 0) {
+      const tegen = oud.map((m) => ({
+        F0901: dagboek,
+        F0302: cashDatum(datum),
+        F0303: stuk.padStart(6, "0"),
+        F0201: m.F0201,
+        ...(m.F0101 ? { F0101: m.F0101 } : {}),
+        F0306: "Correctie testboeking",
+        F0307: cashBedrag(-Math.round(Number(String(m.F0307).replace(",", ".")) * 100)),
+      }));
+      await cash.importeerRecords(TEST_ADMINISTRATIE, tegen);
+      tegengeboekt = tegen.length;
+    }
+  }
+
+  const { error: e2 } = await sb
+    .from("sem_facturen")
+    .update({ status: "fout", foutmelding: `Testboeking ${data.cash_boeking_id ?? ""} tegengeboekt; opnieuw geboekt`, cash_boeking_id: null })
+    .eq("sem_factuur_id", String(invoiceId));
+  if (e2) throw new Error(e2.message);
+
+  return { tegengeboekt, oudBoekstuk: data.cash_boeking_id, nieuw: await startTestboeking(batchNumber, invoiceId) };
 }
 
 /**
