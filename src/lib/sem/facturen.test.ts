@@ -141,4 +141,24 @@ describe("bouwFacturen", () => {
       { grootboek: "120000", btwCode: "Hoog", btwPercentage: 21, bedragCents: 413 },
     ]);
   });
+
+  it("behandelt KASSA als omzet zonder btw en KOR als negatieve regel (batch 93, factuur 35)", () => {
+    const basis = { BatchNumber: 93, CompanyCode: null, InvoiceID: 1963, InvoiceNumber: 35, InvoiceDate: "2023-10-27", DebtorNumber: "69" };
+    const posten: SemJournaalpost[] = [
+      post({ ...basis, JournalEntryID: 11966, AccountTypeCode: "KOR", AccountCode: "100001", InvoiceLineID: 27201, InvoiceLineDescription: "Frisdrank 20%", CreditAmount: -4, TaxAmount: -0.36, TaxCode: "Laag", AmountInclusiveTax: -4.36 }),
+      post({ ...basis, JournalEntryID: 11967, AccountTypeCode: "DEB", AccountCode: "101095", DebitAmount: 17.44, TaxAmount: 1.44 }),
+      post({ ...basis, JournalEntryID: 11968, AccountTypeCode: "BLA", AccountCode: "101097", CreditAmount: -0.36, TaxAmount: -0.36, TaxCode: "Laag", BaseAmount: -4 }),
+      post({ ...basis, JournalEntryID: 11969, AccountTypeCode: "KASSA", AccountCode: "120100", CreditAmount: 21.8, TaxCode: "Nul" }),
+      post({ ...basis, JournalEntryID: 11970, AccountTypeCode: "OPB", AccountCode: "123210", InvoiceLineID: 27200, InvoiceLineDescription: "fanta01", TaxCode: "Laag" }),
+    ];
+    const { facturen } = bouwFacturen({ BatchNumber: 93, CompanyCode: null }, posten, []);
+    const f = facturen[0];
+    expect(f.regels.map((r) => [r.grootboek, r.bedragExclCents, r.btwCents])).toEqual([
+      ["100001", -400, -36],
+      ["120100", 2180, 0],
+    ]);
+    expect(f.btwRegels).toEqual([{ grootboek: "101097", btwCode: "Laag", btwPercentage: null, bedragCents: -36 }]);
+    expect(f.debiteurTotaalCents).toBe(1744);
+    expect(f.problemen.join(" ")).not.toContain("sluit niet");
+  });
 });

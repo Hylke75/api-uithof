@@ -103,8 +103,23 @@ export function bouwFacturen(
         continue;
       }
 
-      // Overige posten zonder factuurregel: btw-regels (BHO/BLA/…).
       if (saldo === 0) continue;
+      // Overige posten zonder factuurregel. Een btw-regel (BHO/BLA/…) boekt precies het btw-bedrag;
+      // al het andere (bijv. KASSA: omzet via de kassa) is een omzetregel zonder btw.
+      const isBtw = centen(p.TaxAmount) !== 0 && centen(p.TaxAmount) === saldo;
+      if (!isBtw) {
+        regels.push({
+          grootboek: tekst(p.AccountCode),
+          btwCode: tekst(p.TaxCode),
+          btwPercentage: p.TaxPercentage,
+          kostenplaats: tekst(p.CostCenterCode) || null,
+          kostendrager: tekst(p.CostUnitCode) || null,
+          omschrijving: tekst(p.InvoiceLineDescription) || soort || "",
+          bedragExclCents: saldo,
+          btwCents: 0,
+        });
+        continue;
+      }
       const rekening = tekst(p.AccountCode);
       const bestaand = btwPerRekening.get(rekening);
       if (bestaand) bestaand.bedragCents += saldo;
