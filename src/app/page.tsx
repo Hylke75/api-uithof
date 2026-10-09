@@ -29,6 +29,9 @@ export default async function Beheer({ searchParams }: { searchParams: Promise<{
       <main>
         <h1>Uithof facturensync</h1>
         <div className="banner proef">De koppeling is nog niet volledig ingesteld. Er wordt niets opgehaald of geboekt.</div>
+        <p>
+          <Link href="/controle">Verbindingen controleren</Link>
+        </p>
         <h2>Nog in te stellen (Vercel → Settings → Environment Variables)</h2>
         <ul>
           {ontbreekt.map((k) => (
@@ -75,8 +78,9 @@ export default async function Beheer({ searchParams }: { searchParams: Promise<{
           : "Live: facturen worden in CASH geboekt."}
       </div>
 
-      <form action={handmatigeSync}>
+      <form action={handmatigeSync} className="acties">
         <button type="submit">Sync nu starten</button>
+        <Link href="/controle">Verbindingen controleren</Link>
       </form>
 
       <h2>Facturen</h2>
