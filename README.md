@@ -165,3 +165,16 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync
 - [ ] Startdatum: eerste factuurdatum die niet meer handmatig in CASH komt
 - [ ] Betalingen uit CASH terugzetten in SEM (`AddInvoicePayments`): gewenst?
 - [ ] Supabase-organisatie (kosten), Vercel-project en contactpersoon De Uithof voor de parallel-run
+
+## Beheer-routes (alleen met `Authorization: Bearer $CRON_SECRET`)
+
+| Route | Doel |
+|---|---|
+| `GET /api/cron/diagnose-config` | Waar de instellingen naar wijzen (hosts en vorm van de sleutels, geen geheimen) |
+| `GET /api/cron/diagnose-sem?van=JJJJ-MM-DD` | Alleen-lezen test van de SEM-API |
+| `GET /api/cron/diagnose-cash?periode=JJPP\|JJPP&dagboek=&stuk=` | Alleen-lezen test van CASH, inclusief geboekte regels |
+| `POST /api/cron/testboeking?batch=&factuur=` | Echte boeking van één SEM-factuur, alleen in CASH-administratie `demo` |
+| `POST /api/cron/testboeking?batch=&factuur=&herstel=1` | Oude testboeking tegenboeken (boekstuk 9 + nummer) en opnieuw boeken |
+| `POST /api/cron/testdata-opruimen?facturen=&debiteuren=` | Testgegevens uit de database halen, alleen bij administratie `demo` |
+
+Let op: een gewijzigde omgevingsvariabele in Vercel werkt pas na een nieuwe deployment.
