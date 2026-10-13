@@ -1,8 +1,10 @@
+import { request as httpsRequest } from "node:https";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeEqual } from "@/lib/auth";
 import { leesEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
@@ -38,15 +40,38 @@ export async function GET(req: NextRequest) {
   const batch = req.nextUrl.searchParams.get("batch");
   const alles = req.nextUrl.searchParams.get("alles") === "1";
 
+  // ?methode=get: zoals het voorbeeld in de SEM-documentatie, GET met de filter in de body.
+  // fetch() staat geen body bij GET toe, daarom via node:https.
+  const methode = req.nextUrl.searchParams.get("methode") === "get" ? "GET" : "POST";
+  function getMetBody(url: string, body: string): Promise<{ status: number; text: () => Promise<string> }> {
+    return new Promise((resolve, reject) => {
+      const r = httpsRequest(
+        url,
+        { method: "GET", headers: { Accept: "application/json", "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), ApiKey: key }, timeout: 30_000 },
+        (res) => {
+          let data = "";
+          res.on("data", (c) => (data += c));
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, text: async () => data }));
+        },
+      );
+      r.on("error", reject);
+      r.on("timeout", () => r.destroy(new Error("timeout")));
+      r.end(body);
+    });
+  }
+
   async function post(pad: string, body: unknown) {
     const start = Date.now();
     try {
-      const res = await fetch(`${base}/api/${pad}`, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json", ApiKey: key },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(30_000),
-      });
+      const res =
+        methode === "GET"
+          ? await getMetBody(`${base}/api/${pad}`, JSON.stringify(body))
+          : await fetch(`${base}/api/${pad}`, {
+              method: "POST",
+              headers: { Accept: "application/json", "Content-Type": "application/json", ApiKey: key },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(30_000),
+            });
       const tekst = await res.text();
       let json: unknown = null;
       try {
@@ -54,7 +79,7 @@ export async function GET(req: NextRequest) {
       } catch {
         /* geen JSON */
       }
-      return { pad, verzoek: body, http: res.status, ms: Date.now() - start, antwoord: json ? samenvatting(json, alles) : tekst.slice(0, 500) };
+      return { pad, methode, verzoek: body, http: res.status, ms: Date.now() - start, antwoord: json ? samenvatting(json, alles) : tekst.slice(0, 500) };
     } catch (e) {
       return { pad, verzoek: body, fout: e instanceof Error ? e.message : String(e) };
     }
