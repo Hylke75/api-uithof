@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   // ?methode=get: zoals het voorbeeld in de SEM-documentatie, GET met de filter in de body.
   // fetch() staat geen body bij GET toe, daarom via node:https.
   const methode = req.nextUrl.searchParams.get("methode") === "get" ? "GET" : "POST";
-  function getMetBody(url: string, body: string): Promise<{ status: number; text: () => Promise<string> }> {
+  function getMetBody(url: string, body: string): Promise<{ status: number; headers: unknown; text: () => Promise<string> }> {
     return new Promise((resolve, reject) => {
       const r = httpsRequest(
         url,
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
         (res) => {
           let data = "";
           res.on("data", (c) => (data += c));
-          res.on("end", () => resolve({ status: res.statusCode ?? 0, text: async () => data }));
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, text: async () => data }));
         },
       );
       r.on("error", reject);
@@ -79,7 +79,8 @@ export async function GET(req: NextRequest) {
       } catch {
         /* geen JSON */
       }
-      return { pad, methode, verzoek: body, http: res.status, ms: Date.now() - start, antwoord: json ? samenvatting(json, alles) : tekst.slice(0, 500) };
+      return { pad, methode, verzoek: body, http: res.status, ms: Date.now() - start, antwoord: json ? samenvatting(json, alles) : tekst.slice(0, 500),
+        ...(res.status >= 400 ? { kopregels: "headers" in res && !(res.headers instanceof Headers) ? res.headers : Object.fromEntries((res as Response).headers.entries()), lengte: tekst.length } : {}) };
     } catch (e) {
       return { pad, verzoek: body, fout: e instanceof Error ? e.message : String(e) };
     }
