@@ -9,6 +9,7 @@ export const maxDuration = 120;
 
 /**
  * POST /api/cron/testboeking?batch=94&factuur=1989
+ * Met &proef=1: alleen omzetten en tonen, niets naar CASH.
  * Met &herstel=1: eerst de oude (mislukte) boeking in CASH tegenboeken, dan opnieuw boeken.
  * Boekt één SEM-factuur (of een hele batch) echt in de CASH-testadministratie "demo".
  * Beveiligd met CRON_SECRET; weigert elke andere administratie.
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
       const h = await herstelTestboeking(batch, Number(factuur));
       return NextResponse.json(h, { status: h.nieuw.status === "failed" ? 500 : 200 });
     }
-    const r = await startTestboeking(batch, factuur ? Number(factuur) : undefined);
+    const r = await startTestboeking(batch, factuur ? Number(factuur) : undefined, req.nextUrl.searchParams.get("proef") === "1");
     return NextResponse.json(r, { status: r.status === "failed" ? 500 : 200 });
   } catch (e) {
     return NextResponse.json({ status: "failed", error: redigeer(e instanceof Error ? e.message : String(e)) }, { status: 400 });

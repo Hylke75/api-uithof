@@ -93,7 +93,7 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number)
  * live boekhouding terechtkomen. Gebruikt verder exact dezelfde sync-logica als de nachtelijke run
  * (inclusief bescherming tegen dubbel boeken).
  */
-export async function startTestboeking(batchNumber: number, invoiceId?: number) {
+export async function startTestboeking(batchNumber: number, invoiceId?: number, proef = false) {
   const e = env();
   if (e.CASH_ADMINISTRATIE !== TEST_ADMINISTRATIE) {
     throw new Error(`Testboeking geweigerd: administratie is "${e.CASH_ADMINISTRATIE}", alleen "${TEST_ADMINISTRATIE}" is toegestaan.`);
@@ -115,7 +115,7 @@ export async function startTestboeking(batchNumber: number, invoiceId?: number) 
     store: supabaseStore(db()),
     sem,
     cash: createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY }),
-    dryRun: false,
+    dryRun: proef,
     startDate: "2000-01-01",
     cashInstellingen: {
       administratie: TEST_ADMINISTRATIE,
