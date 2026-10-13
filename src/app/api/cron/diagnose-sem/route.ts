@@ -28,7 +28,11 @@ export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? "";
   if (!safeEqual(auth, `Bearer ${leesEnv("CRON_SECRET") ?? ""}`)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const base = (leesEnv("SEM_BASE_URL") ?? "").replace(/\/+$/, "").replace(/\/api$/i, "");
+  // ?omgeving=demo test dezelfde sleutel tegen de SEM-testomgeving (om te zien bij welke omgeving hij hoort).
+  const base =
+    req.nextUrl.searchParams.get("omgeving") === "demo"
+      ? "https://apidemo.smarteventmanager.com"
+      : (leesEnv("SEM_BASE_URL") ?? "").replace(/\/+$/, "").replace(/\/api$/i, "");
   const key = leesEnv("SEM_API_KEY") ?? "";
   const van = req.nextUrl.searchParams.get("van") ?? "2000-01-01";
   const batch = req.nextUrl.searchParams.get("batch");
