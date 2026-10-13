@@ -43,6 +43,9 @@ export async function GET(req: NextRequest) {
   // ?methode=get: zoals het voorbeeld in de SEM-documentatie, GET met de filter in de body.
   // fetch() staat geen body bij GET toe, daarom via node:https.
   const methode = req.nextUrl.searchParams.get("methode") === "get" ? "GET" : "POST";
+  // Varianten voor GET: zonder body en/of met een eigen querystring (bijv. FromModifiedAt=2025-03-01).
+  const zonderBody = req.nextUrl.searchParams.get("zonderbody") === "1";
+  const qs = req.nextUrl.searchParams.get("qs") ?? "";
   function getMetBody(url: string, body: string): Promise<{ status: number; headers: unknown; text: () => Promise<string> }> {
     return new Promise((resolve, reject) => {
       const r = httpsRequest(
@@ -65,7 +68,7 @@ export async function GET(req: NextRequest) {
     try {
       const res =
         methode === "GET"
-          ? await getMetBody(`${base}/api/${pad}`, JSON.stringify(body))
+          ? await getMetBody(`${base}/api/${pad}${qs ? `?${qs}` : ""}`, zonderBody ? "" : JSON.stringify(body))
           : await fetch(`${base}/api/${pad}`, {
               method: "POST",
               headers: { Accept: "application/json", "Content-Type": "application/json", ApiKey: key },
