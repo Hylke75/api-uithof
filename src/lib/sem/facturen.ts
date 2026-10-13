@@ -14,6 +14,9 @@ const MARGE_CENTS = 1;
 
 const tekst = (x: unknown) => String(x ?? "").trim();
 
+/** Omschrijving voor posten zonder eigen omschrijving; leeg = de omschrijving van de factuur. */
+const OMSCHRIJVING_PER_SOORT: Record<string, string> = { VERSCH: "Afrondingsverschil", KASSA: "Kassa" };
+
 /**
  * Bouwt per factuur een SemFactuur uit de journaalposten van een batch.
  *
@@ -86,7 +89,7 @@ export function bouwFacturen(
       if (p.InvoiceLineID != null) {
         if (saldo === 0 && centen(p.TaxAmount) === 0) continue;
         const teken = saldo < 0 ? -1 : 1;
-        const btw = teken * Math.abs(centen(p.TaxAmount));
+        const btw = teken * Math.abs(centen(p.TaxAmount)) || 0;
         if (p.IsAmountInclusiveTax && p.AmountInclusiveTax != null && Math.abs(Math.abs(saldo) + Math.abs(btw) - Math.abs(centen(p.AmountInclusiveTax))) > MARGE_CENTS) {
           problemen.push(`Journaalpost ${p.JournalEntryID}: bedrag excl. btw plus btw sluit niet aan op het bedrag incl. btw.`);
         }
@@ -105,7 +108,8 @@ export function bouwFacturen(
 
       if (saldo === 0) continue;
       // Overige posten zonder factuurregel. Een btw-regel (BHO/BLA/…) boekt precies het btw-bedrag;
-      // al het andere (bijv. KASSA: omzet via de kassa) is een omzetregel zonder btw.
+      // al het andere is een omzetregel met de btw uit TaxAmount: OPB in het live SEM (zonder
+      // InvoiceLineID), KASSA (omzet via de kassa, btw 0) en VERSCH (afrondingsverschil, btw 0).
       const isBtw = centen(p.TaxAmount) !== 0 && centen(p.TaxAmount) === saldo;
       if (!isBtw) {
         regels.push({
@@ -114,9 +118,9 @@ export function bouwFacturen(
           btwPercentage: p.TaxPercentage,
           kostenplaats: tekst(p.CostCenterCode) || null,
           kostendrager: tekst(p.CostUnitCode) || null,
-          omschrijving: tekst(p.InvoiceLineDescription) || soort || "",
+          omschrijving: tekst(p.InvoiceLineDescription) || OMSCHRIJVING_PER_SOORT[soort] || "",
           bedragExclCents: saldo,
-          btwCents: 0,
+          btwCents: (saldo < 0 ? -1 : 1) * Math.abs(centen(p.TaxAmount)) || 0,
         });
         continue;
       }

@@ -161,4 +161,40 @@ describe("bouwFacturen", () => {
     expect(f.debiteurTotaalCents).toBe(1744);
     expect(f.problemen.join(" ")).not.toContain("sluit niet");
   });
+
+  it("verwerkt een echte creditnota uit het live SEM: omzet zonder factuurregel, met afrondingsverschil (batch 1005)", () => {
+    const basis = { BatchNumber: 1005, CompanyCode: null, InvoiceID: 21396, InvoiceNumber: 823382, InvoiceDate: "2026-07-10", DebtorNumber: "147038" };
+    const omzet = (rek: string, credit: number, btw: number) => post({ ...basis, AccountTypeCode: "OPB", AccountCode: rek, CreditAmount: credit, TaxAmount: btw });
+    const posten: SemJournaalpost[] = [
+      post({ ...basis, AccountTypeCode: "DEB", AccountCode: "1300", DebitAmount: -5203.01, TaxAmount: -498.65 }),
+      post({ ...basis, AccountTypeCode: "BHO", AccountCode: "1701", CreditAmount: -131.69, TaxAmount: -131.69 }),
+      post({ ...basis, AccountTypeCode: "BLA", AccountCode: "1702", CreditAmount: -366.95, TaxAmount: -366.95 }),
+      omzet("8405", -300.32, -27.03),
+      omzet("8405", -396.47, -35.68),
+      omzet("8406", -257.28, -54.03),
+      omzet("8410", -3242.84, -291.86),
+      omzet("8500", -369.83, -77.67),
+      omzet("8611", -137.61, -12.39),
+      post({ ...basis, AccountTypeCode: "VERSCH", AccountCode: "9999", CreditAmount: -0.02, TaxAmount: 0, TaxPercentage: 0 }),
+    ];
+    const { facturen } = bouwFacturen({ BatchNumber: 1005, CompanyCode: null }, posten, [{ InvoiceID: 21396, DebtorNumber: "147038", InvoiceDate: "2026-07-10" } as SemInvoice]);
+    const f = facturen[0];
+    expect(f.problemen).toEqual([]);
+    expect(f.soort).toBe("creditnota");
+    expect(f.factuurnummer).toBe("823382");
+    expect(f.regels.map((r) => [r.grootboek, r.bedragExclCents, r.btwCents, r.omschrijving])).toEqual([
+      ["8405", -30032, -2703, ""],
+      ["8405", -39647, -3568, ""],
+      ["8406", -25728, -5403, ""],
+      ["8410", -324284, -29186, ""],
+      ["8500", -36983, -7767, ""],
+      ["8611", -13761, -1239, ""],
+      ["9999", -2, 0, "Afrondingsverschil"],
+    ]);
+    expect(f.btwRegels.map((b) => [b.grootboek, b.bedragCents])).toEqual([
+      ["1701", -13169],
+      ["1702", -36695],
+    ]);
+    expect(f.debiteurTotaalCents).toBe(-520301);
+  });
 });
