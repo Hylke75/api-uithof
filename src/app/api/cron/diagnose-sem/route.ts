@@ -42,15 +42,17 @@ export async function GET(req: NextRequest) {
 
   // ?methode=get: zoals het voorbeeld in de SEM-documentatie, GET met de filter in de body.
   // fetch() staat geen body bij GET toe, daarom via node:https.
-  const methode = req.nextUrl.searchParams.get("methode") === "get" ? "GET" : "POST";
+  const m = req.nextUrl.searchParams.get("methode");
+  // "get" en "https-post" gaan via node:https; zonder parameter via fetch (zoals de sync).
+  const methode = m === "get" ? "GET" : m === "https-post" ? "HTTPS-POST" : "POST";
   // Varianten voor GET: zonder body en/of met een eigen querystring (bijv. FromModifiedAt=2025-03-01).
   const zonderBody = req.nextUrl.searchParams.get("zonderbody") === "1";
   const qs = req.nextUrl.searchParams.get("qs") ?? "";
-  function getMetBody(url: string, body: string): Promise<{ status: number; headers: unknown; text: () => Promise<string> }> {
+  function getMetBody(url: string, body: string, method = "GET"): Promise<{ status: number; headers: unknown; text: () => Promise<string> }> {
     return new Promise((resolve, reject) => {
       const r = httpsRequest(
         url,
-        { method: "GET", headers: { Accept: "application/json", "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), ApiKey: key }, timeout: 30_000 },
+        { method, headers: { Accept: "application/json", "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), ApiKey: key }, timeout: 30_000 },
         (res) => {
           let data = "";
           res.on("data", (c) => (data += c));
@@ -67,8 +69,8 @@ export async function GET(req: NextRequest) {
     const start = Date.now();
     try {
       const res =
-        methode === "GET"
-          ? await getMetBody(`${base}/api/${pad}${qs ? `?${qs}` : ""}`, zonderBody ? "" : JSON.stringify(body))
+        methode !== "POST"
+          ? await getMetBody(`${base}/api/${pad}${qs ? `?${qs}` : ""}`, zonderBody ? "" : JSON.stringify(body), methode === "GET" ? "GET" : "POST")
           : await fetch(`${base}/api/${pad}`, {
               method: "POST",
               headers: { Accept: "application/json", "Content-Type": "application/json", ApiKey: key },
