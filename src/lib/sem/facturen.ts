@@ -61,6 +61,8 @@ export function bouwFacturen(
 
   const facturen: SemFactuur[] = [];
   for (const [invoiceId, lijst] of perFactuur) {
+    // Factuur van € 0,00 (alle posten nul): er valt niets te boeken.
+    if (lijst.every((p) => centen(p.CreditAmount) === 0 && centen(p.DebitAmount) === 0)) continue;
     const kop = kopPerId.get(invoiceId);
     const eerste = lijst[0];
     const problemen: string[] = [];

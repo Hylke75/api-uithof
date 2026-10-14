@@ -39,7 +39,13 @@ export async function GET(req: NextRequest) {
     const koppeling = new Map<string, number>();
     for (const r of naarRecords(b)) koppeling.set(r.F0201, (koppeling.get(r.F0201) ?? 0) + centen(r.F0307));
 
-    const inCash = await cash.mutaties(b.administratie, cashDatum(b.boekdatum).slice(0, 4), b.dagboek.toUpperCase(), b.factuurnummer);
+    // Boekperiode in CASH kan afwijken van de factuurdatum: zoek een maand ervoor tot een maand erna.
+    const maand = (delta: number) => {
+      const d = new Date(`${b.boekdatum.slice(0, 7)}-01T00:00:00Z`);
+      d.setUTCMonth(d.getUTCMonth() + delta);
+      return cashDatum(d.toISOString().slice(0, 10)).slice(0, 4);
+    };
+    const inCash = await cash.mutaties(b.administratie, maand(-1), b.dagboek.toUpperCase(), b.factuurnummer, maand(1));
     const handmatig = new Map<string, number>();
     for (const m of inCash) handmatig.set(m.F0201, (handmatig.get(m.F0201) ?? 0) + centen(m.F0307));
 

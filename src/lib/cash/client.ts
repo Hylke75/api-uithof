@@ -210,8 +210,8 @@ export function createCashClient(config: CashConfig) {
     },
 
     /** Grootboekmutaties (record 301) van één dagboek en stuknummer in een periode JJPP. */
-    async mutaties(admin: string, periode: string, dagboek: string, stuk: string): Promise<Veld[]> {
-      const q = `?admin=${encodeURIComponent(admin)}&params=${encodeURIComponent(`${periode}|${periode}`)}`;
+    async mutaties(admin: string, periode: string, dagboek: string, stuk: string, totPeriode = periode): Promise<Veld[]> {
+      const q = `?admin=${encodeURIComponent(admin)}&params=${encodeURIComponent(`${periode}|${totPeriode}`)}`;
       const { status, body } = await request(`/get/index/301T${q}`);
       if (status !== 200) throw new CashAfgewezenError(`CASH 301T: HTTP ${status} ${kort(body)}`);
       const r = (body as { R0301?: unknown } | null)?.R0301;

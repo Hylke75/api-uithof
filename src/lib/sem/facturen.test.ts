@@ -197,4 +197,12 @@ describe("bouwFacturen", () => {
     ]);
     expect(f.debiteurTotaalCents).toBe(-520301);
   });
+
+  it("slaat een factuur van € 0,00 over (live SEM, factuur 823358)", () => {
+    const basis = { InvoiceID: 21371, InvoiceNumber: 823358, DebtorNumber: "125681" };
+    const posten = [post({ ...basis, AccountTypeCode: "DEB", AccountCode: "1300" }), post({ ...basis, AccountTypeCode: "OPB", AccountCode: "8915" })];
+    const { facturen, batchProblemen } = bouwFacturen(batch, posten, []);
+    expect(facturen).toEqual([]);
+    expect(batchProblemen).toEqual([]);
+  });
 });
