@@ -23,15 +23,17 @@ export async function POST(req: NextRequest) {
   const factuur = req.nextUrl.searchParams.get("factuur");
   if (!Number.isInteger(batch) || batch <= 0) return NextResponse.json({ error: "batch ontbreekt" }, { status: 400 });
 
+  const dagboek = req.nextUrl.searchParams.get("dagboek")?.trim().toUpperCase() || undefined;
+  if (dagboek && !/^[A-Z0-9]{1,6}$/.test(dagboek)) return NextResponse.json({ error: "ongeldig dagboek" }, { status: 400 });
+  const invoiceId = factuur ? Number(factuur) : undefined;
+
   try {
     if (req.nextUrl.searchParams.get("herstel") === "1") {
-      if (!factuur) return NextResponse.json({ error: "factuur ontbreekt" }, { status: 400 });
-      const h = await herstelTestboeking(batch, Number(factuur));
+      if (invoiceId == null) return NextResponse.json({ error: "factuur ontbreekt" }, { status: 400 });
+      const h = await herstelTestboeking(batch, invoiceId, dagboek);
       return NextResponse.json(h, { status: h.nieuw.status === "failed" ? 500 : 200 });
     }
-    const dagboek = req.nextUrl.searchParams.get("dagboek")?.trim().toUpperCase() || undefined;
-    if (dagboek && !/^[A-Z0-9]{1,6}$/.test(dagboek)) return NextResponse.json({ error: "ongeldig dagboek" }, { status: 400 });
-    const r = await startTestboeking(batch, factuur ? Number(factuur) : undefined, req.nextUrl.searchParams.get("proef") === "1", dagboek);
+    const r = await startTestboeking(batch, { invoiceId, proef: req.nextUrl.searchParams.get("proef") === "1", dagboek });
     return NextResponse.json(r, { status: r.status === "failed" ? 500 : 200 });
   } catch (e) {
     return NextResponse.json({ status: "failed", error: redigeer(e instanceof Error ? e.message : String(e)) }, { status: 400 });

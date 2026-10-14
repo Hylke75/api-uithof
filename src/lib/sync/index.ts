@@ -2,16 +2,33 @@ import { cashBedrag, cashDatum, createCashClient } from "@/lib/cash/client";
 import { env } from "@/lib/env";
 import { createSemClient, type SemClient } from "@/lib/sem/client";
 import { db } from "@/lib/supabase";
+import type { CashInstellingen } from "./mapping";
 import { runSync } from "./run";
 import { laadInstellingen, supabaseStore } from "./store";
 
 /** De enige CASH-administratie waarin een testboeking is toegestaan. */
 export const TEST_ADMINISTRATIE = "demo";
 
+/**
+ * CASH-instellingen voor een run: een omgevingsvariabele in Vercel gaat voor, anders de waarde uit
+ * de tabel `instellingen`. Het dagboek staat altijd in hoofdletters, zoals CASH het opslaat.
+ */
+function cashInstellingenVan(
+  e: ReturnType<typeof env>,
+  inst: Record<string, string>,
+  { administratie = e.CASH_ADMINISTRATIE, dagboek }: { administratie?: string; dagboek?: string } = {},
+): CashInstellingen {
+  return {
+    administratie,
+    dagboek: (dagboek || e.CASH_DAGBOEK || inst.cash_dagboek || "").toUpperCase(),
+    debiteurenGrootboek: e.CASH_GB_DEBITEUREN || inst.cash_gb_debiteuren || "",
+    kostenplaatsNegeren: inst.kostenplaatsen === "negeren",
+  };
+}
+
 /** Start een sync met de productieconfiguratie uit de omgevingsvariabelen. */
 export async function startSync(trigger: "cron" | "handmatig") {
   const e = env();
-  // Een omgevingsvariabele in Vercel gaat voor; anders de waarde uit de tabel `instellingen`.
   const inst = await laadInstellingen(db());
   return runSync({
     store: supabaseStore(db()),
@@ -19,12 +36,7 @@ export async function startSync(trigger: "cron" | "handmatig") {
     cash: createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY }),
     dryRun: e.SYNC_DRY_RUN,
     startDate: e.SYNC_START_DATE,
-    cashInstellingen: {
-      administratie: e.CASH_ADMINISTRATIE,
-      dagboek: e.CASH_DAGBOEK || inst.cash_dagboek || "",
-      debiteurenGrootboek: e.CASH_GB_DEBITEUREN || inst.cash_gb_debiteuren || "",
-      kostenplaatsNegeren: inst.kostenplaatsen === "negeren",
-    },
+    cashInstellingen: cashInstellingenVan(e, inst),
     trigger,
   });
 }
@@ -42,7 +54,7 @@ async function stap<T>(naam: string, f: () => Promise<T>): Promise<T> {
  * het oude boekstuk heeft staan (zodat dat op nul uitkomt), zet de factuur terug en boekt hem
  * opnieuw volgens de huidige instellingen.
  */
-export async function herstelTestboeking(batchNumber: number, invoiceId: number) {
+export async function herstelTestboeking(batchNumber: number, invoiceId: number, dagboekNieuw?: string) {
   const e = env();
   if (e.CASH_ADMINISTRATIE !== TEST_ADMINISTRATIE) {
     throw new Error(`Herstel geweigerd: administratie is "${e.CASH_ADMINISTRATIE}", alleen "${TEST_ADMINISTRATIE}" is toegestaan.`);
@@ -57,8 +69,13 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number)
   if (!data) throw new Error(`Factuur ${invoiceId} staat niet in de database.`);
 
   let tegengeboekt = 0;
-  const [dagboek, stuk] = String(data.cash_boeking_id ?? "").split(" ")[0].split("/");
+  const [dagboekOud, stuk] = String(data.cash_boeking_id ?? "").split(" ")[0].split("/");
+  const dagboek = (dagboekOud ?? "").toUpperCase();
   if (data.status === "geboekt" && dagboek && stuk) {
+    // De correctie krijgt "9" + het oude nummer; CASH staat maximaal 6 cijfers toe.
+    if (stuk.replace(/^0+/, "").length > 5) {
+      throw new Error(`Herstel kan niet voor ${dagboek}/${stuk}: het correctienummer zou te lang worden. Corrigeer dit boekstuk in CASH.`);
+    }
     const cash = createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY });
     const datum = String(data.factuurdatum);
     const oud = await stap("oude boeking lezen", () => cash.mutaties(TEST_ADMINISTRATIE, cashDatum(datum).slice(0, 4), dagboek, stuk));
@@ -66,8 +83,8 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number)
       const tegen = oud.map((m) => ({
         F0901: dagboek,
         F0302: cashDatum(datum),
-        // CASH weigert een bestaand boekstuknummer; de correctie krijgt 9 + het oude nummer.
-        F0303: `9${stuk.padStart(5, "0")}`,
+        // CASH weigert een bestaand boekstuknummer; daarom een eigen nummer voor de correctie.
+        F0303: `9${stuk.replace(/^0+/, "").padStart(5, "0")}`,
         F0201: m.F0201,
         ...(m.F0101 ? { F0101: m.F0101 } : {}),
         F0306: `Correctie ${dagboek}/${stuk}`,
@@ -84,7 +101,16 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number)
     .eq("sem_factuur_id", String(invoiceId));
   if (e2) throw new Error(e2.message);
 
-  return { tegengeboekt, oudBoekstuk: data.cash_boeking_id, nieuw: await startTestboeking(batchNumber, invoiceId) };
+  return { tegengeboekt, oudBoekstuk: data.cash_boeking_id, nieuw: await startTestboeking(batchNumber, { invoiceId, dagboek: dagboekNieuw }) };
+}
+
+export interface TestboekingOpties {
+  /** Alleen deze SEM-factuur (InvoiceID); zonder: de hele batch. */
+  invoiceId?: number;
+  /** Alleen omzetten en tonen, niets naar CASH. */
+  proef?: boolean;
+  /** Ander dagboek in de testadministratie dan het ingestelde. */
+  dagboek?: string;
 }
 
 /**
@@ -93,7 +119,7 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number)
  * live boekhouding terechtkomen. Gebruikt verder exact dezelfde sync-logica als de nachtelijke run
  * (inclusief bescherming tegen dubbel boeken).
  */
-export async function startTestboeking(batchNumber: number, invoiceId?: number, proef = false, dagboek?: string) {
+export async function startTestboeking(batchNumber: number, { invoiceId, proef = false, dagboek }: TestboekingOpties = {}) {
   const e = env();
   if (e.CASH_ADMINISTRATIE !== TEST_ADMINISTRATIE) {
     throw new Error(`Testboeking geweigerd: administratie is "${e.CASH_ADMINISTRATIE}", alleen "${TEST_ADMINISTRATIE}" is toegestaan.`);
@@ -117,12 +143,7 @@ export async function startTestboeking(batchNumber: number, invoiceId?: number, 
     cash: createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY }),
     dryRun: proef,
     startDate: "2000-01-01",
-    cashInstellingen: {
-      administratie: TEST_ADMINISTRATIE,
-      dagboek: dagboek || e.CASH_DAGBOEK || inst.cash_dagboek || "",
-      debiteurenGrootboek: e.CASH_GB_DEBITEUREN || inst.cash_gb_debiteuren || "",
-      kostenplaatsNegeren: inst.kostenplaatsen === "negeren",
-    },
+    cashInstellingen: cashInstellingenVan(e, inst, { administratie: TEST_ADMINISTRATIE, dagboek }),
     trigger: "handmatig",
   });
 }

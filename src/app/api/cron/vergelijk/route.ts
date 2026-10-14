@@ -8,9 +8,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
- * GET /api/cron/vergelijk?batch=1004
+ * GET /api/cron/vergelijk?batch=1004[&dagboek=VERKS]
  * Legt per factuur de omzetting van de koppeling (cash_payload) naast wat er al in CASH staat
- * (zelfde dagboek en boekstuknummer), opgeteld per grootboekrekening. Alleen lezen.
+ * (zelfde boekstuknummer; standaard het dagboek uit de omzetting), opgeteld per grootboekrekening.
+ * Alleen lezen.
  */
 const centen = (s: string) => Math.round(Number(String(s).replace(",", ".")) * 100);
 
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
   if (!safeEqual(auth, `Bearer ${leesEnv("CRON_SECRET") ?? ""}`)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const batch = Number(req.nextUrl.searchParams.get("batch"));
   if (!Number.isInteger(batch) || batch <= 0) return NextResponse.json({ error: "batch ontbreekt" }, { status: 400 });
+  const dagboekVast = req.nextUrl.searchParams.get("dagboek")?.trim().toUpperCase();
 
   const { data, error } = await db()
     .from("sem_facturen")
@@ -45,7 +47,7 @@ export async function GET(req: NextRequest) {
       d.setUTCMonth(d.getUTCMonth() + delta);
       return cashDatum(d.toISOString().slice(0, 10)).slice(0, 4);
     };
-    const inCash = await cash.mutaties(b.administratie, maand(-1), b.dagboek.toUpperCase(), b.factuurnummer, maand(1));
+    const inCash = await cash.mutaties(b.administratie, maand(-1), dagboekVast || b.dagboek.toUpperCase(), b.factuurnummer, maand(1));
     const handmatig = new Map<string, number>();
     for (const m of inCash) handmatig.set(m.F0201, (handmatig.get(m.F0201) ?? 0) + centen(m.F0307));
 
