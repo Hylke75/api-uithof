@@ -93,7 +93,7 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number)
  * live boekhouding terechtkomen. Gebruikt verder exact dezelfde sync-logica als de nachtelijke run
  * (inclusief bescherming tegen dubbel boeken).
  */
-export async function startTestboeking(batchNumber: number, invoiceId?: number, proef = false) {
+export async function startTestboeking(batchNumber: number, invoiceId?: number, proef = false, dagboek?: string) {
   const e = env();
   if (e.CASH_ADMINISTRATIE !== TEST_ADMINISTRATIE) {
     throw new Error(`Testboeking geweigerd: administratie is "${e.CASH_ADMINISTRATIE}", alleen "${TEST_ADMINISTRATIE}" is toegestaan.`);
@@ -119,7 +119,7 @@ export async function startTestboeking(batchNumber: number, invoiceId?: number, 
     startDate: "2000-01-01",
     cashInstellingen: {
       administratie: TEST_ADMINISTRATIE,
-      dagboek: e.CASH_DAGBOEK || inst.cash_dagboek || "",
+      dagboek: dagboek || e.CASH_DAGBOEK || inst.cash_dagboek || "",
       debiteurenGrootboek: e.CASH_GB_DEBITEUREN || inst.cash_gb_debiteuren || "",
       kostenplaatsNegeren: inst.kostenplaatsen === "negeren",
     },
