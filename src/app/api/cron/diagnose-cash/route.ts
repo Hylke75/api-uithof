@@ -20,7 +20,10 @@ export async function GET(req: NextRequest) {
 
   const base = (leesEnv("CASH_BASE_URL") ?? "https://www.cashweb.nl/api/4.0").replace(/\/+$/, "");
   const key = leesEnv("CASH_API_KEY") ?? "";
-  const admin = leesEnv("CASH_ADMINISTRATIE") ?? "";
+  // Alleen lezen: ?admin= kijkt in een andere administratie (bijv. spo1 vóór het live gaan).
+  const adminParam = req.nextUrl.searchParams.get("admin");
+  if (adminParam && !/^[a-z0-9]{1,8}$/i.test(adminParam)) return NextResponse.json({ error: "ongeldige administratie" }, { status: 400 });
+  const admin = adminParam || (leesEnv("CASH_ADMINISTRATIE") ?? "");
   const relaties = (req.nextUrl.searchParams.get("relaties") ?? "").split(",").filter(Boolean);
   // Optioneel: grootboekmutaties (record 301) van een periode JJPP|JJPP, gefilterd op dagboek/stuknummer.
   const periode = req.nextUrl.searchParams.get("periode");
