@@ -26,6 +26,15 @@ function cashInstellingenVan(
   };
 }
 
+/** Eerste factuurnummer voor de koppeling (SYNC_START_FACTUUR of instelling start_factuurnummer). */
+function startFactuurnummerVan(inst: Record<string, string>): number | undefined {
+  const waarde = leesEnv("SYNC_START_FACTUUR") || inst.start_factuurnummer;
+  if (!waarde) return undefined;
+  const n = Number(waarde);
+  if (!Number.isInteger(n) || n <= 0) throw new Error(`Ongeldig startfactuurnummer "${waarde}".`);
+  return n;
+}
+
 /**
  * Start een sync met de productieconfiguratie uit de omgevingsvariabelen. Echt boeken buiten de
  * testadministratie kan alleen als CASH_LIVE_ADMINISTRATIE bewust op dezelfde administratie staat.
@@ -44,6 +53,7 @@ export async function startSync(trigger: "cron" | "handmatig") {
     cash: createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY }),
     dryRun: e.SYNC_DRY_RUN,
     startDate: e.SYNC_START_DATE,
+    startFactuurnummer: startFactuurnummerVan(inst),
     cashInstellingen: cashInstellingenVan(e, inst),
     trigger,
   });

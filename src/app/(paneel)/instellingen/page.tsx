@@ -35,6 +35,10 @@ export default async function Instellingen() {
             </dd>
             <dt>Batches vanaf</dt>
             <dd>{config.startDatum ? datum(config.startDatum) : <Pill toon="danger">niet ingesteld</Pill>}</dd>
+            <dt>Facturen vanaf nummer</dt>
+            <dd>
+              <Waarde r={config.startFactuur} />
+            </dd>
           </dl>
         </Kaart>
 

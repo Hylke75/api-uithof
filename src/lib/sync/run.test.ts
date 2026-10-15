@@ -260,4 +260,16 @@ describe("runSync", () => {
     expect(r).toMatchObject({ n_batches: 1, n_geboekt: 1 });
     expect(facturen.get("1877")!.status).toBe("geboekt");
   });
+
+  it("slaat facturen onder het startfactuurnummer over (al met de hand geboekt)", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    const cash = cashSpy();
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: false, startFactuurnummer: 10320 });
+    expect(r).toMatchObject({ n_overgeslagen: 1, n_geboekt: 0 });
+    expect(cash.geboekt).toHaveLength(0);
+    expect(facturen.size).toBe(0);
+
+    const r2 = await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: false, startFactuurnummer: 10319 });
+    expect(r2).toMatchObject({ n_overgeslagen: 0, n_geboekt: 1 });
+  });
 });

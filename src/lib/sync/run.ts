@@ -19,6 +19,11 @@ export interface SyncOptions {
   dryRun: boolean;
   /** Vroegste factuurdatum die ooit geboekt wordt, en vroegste wijzigingsdatum voor batches (YYYY-MM-DD). */
   startDate: string;
+  /**
+   * Eerste factuurnummer dat de koppeling boekt. Lagere nummers zijn al met de hand in CASH
+   * geboekt (overstap) en worden overgeslagen.
+   */
+  startFactuurnummer?: number;
   cashInstellingen: CashInstellingen;
   trigger: RunTrigger;
   now?: Date;
@@ -110,7 +115,11 @@ async function verwerkFactuur(
 ) {
   const { store, cash, dryRun, startDate, cashInstellingen, mappings, runId, t } = ctx;
 
-  if (isDatum(factuur.factuurdatum) && factuur.factuurdatum < startDate) {
+  const nummer = Number(factuur.factuurnummer);
+  const voorOverstap =
+    (isDatum(factuur.factuurdatum) && factuur.factuurdatum < startDate) ||
+    (ctx.startFactuurnummer != null && Number.isFinite(nummer) && nummer < ctx.startFactuurnummer);
+  if (voorOverstap) {
     // Van vóór de overstap: die zit al via de handmatige import in CASH.
     t.n_overgeslagen++;
     return;

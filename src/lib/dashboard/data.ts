@@ -27,6 +27,7 @@ export interface Configuratie {
   debiteurenGrootboek: Resultaat<string>;
   debiteurenVoorschot: Resultaat<string>;
   startDatum: string;
+  startFactuur: Resultaat<string>;
   supabaseUrl: string;
   ontbrekend: string[];
 }
@@ -51,6 +52,7 @@ export async function configuratie(): Promise<Configuratie> {
     debiteurenGrootboek: uitInst("CASH_GB_DEBITEUREN", "cash_gb_debiteuren"),
     debiteurenVoorschot: uitInst("CASH_GB_DEBITEUREN_VOORSCHOT", "cash_gb_debiteuren_voorschot"),
     startDatum: leesEnv("SYNC_START_DATE") ?? "",
+    startFactuur: uitInst("SYNC_START_FACTUUR", "start_factuurnummer"),
     supabaseUrl: (leesEnv("SUPABASE_URL") ?? "").replace(/\/rest\/v1\/?$/, ""),
     ontbrekend: ontbrekendeInstellingen(),
   };
