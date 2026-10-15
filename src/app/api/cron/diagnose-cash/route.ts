@@ -57,7 +57,8 @@ export async function GET(req: NextRequest) {
     const lijst = rijen((m.json as { R0301?: unknown } | null)?.R0301).filter(
       (r) => (!dagboekFilter || r.F0901 === dagboekFilter) && (!stukFilter || Number(r.F0303) === Number(stukFilter)),
     );
-    mutaties = { http: m.http, aantal: lijst.length, lijst: lijst.slice(0, 50), fout: m.tekst };
+    const stukken = [...new Set(lijst.map((r) => r.F0303))].sort();
+    mutaties = { http: m.http, aantal: lijst.length, stukken: { aantal: stukken.length, eerste: stukken[0], laatste: stukken.at(-1) }, lijst: lijst.slice(0, 50), fout: m.tekst };
   }
 
   return NextResponse.json({
