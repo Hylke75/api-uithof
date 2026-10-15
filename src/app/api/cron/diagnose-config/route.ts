@@ -1,13 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { safeEqual } from "@/lib/auth";
+import { weigerZonderCronGeheim } from "@/lib/auth";
 import { leesEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
 /** Waar de instellingen naar wijzen, zonder geheimen: alleen hosts en de vorm van de sleutels. */
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? "";
-  if (!safeEqual(auth, `Bearer ${leesEnv("CRON_SECRET") ?? ""}`)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const geweigerd = weigerZonderCronGeheim(req);
+  if (geweigerd) return geweigerd;
 
   const host = (naam: string) => {
     const v = leesEnv(naam);

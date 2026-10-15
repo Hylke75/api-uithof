@@ -3,7 +3,7 @@ import type { SemClient, SemFactuur } from "@/lib/sem/client";
 import { bouwFacturen } from "@/lib/sem/facturen";
 import { contentHash } from "./hash";
 import { mapFactuur, totalen, type CashInstellingen, type Mappings } from "./mapping";
-import type { FactuurRow, RunTellingen, SyncStore } from "./store";
+import type { FactuurRow, RunTellingen, RunTrigger, SyncStore } from "./store";
 
 /**
  * Hoeveel dagen we bij het ophalen van batches terugkijken vóór de vorige run. Dubbel ophalen
@@ -20,7 +20,7 @@ export interface SyncOptions {
   /** Vroegste factuurdatum die ooit geboekt wordt, en vroegste wijzigingsdatum voor batches (YYYY-MM-DD). */
   startDate: string;
   cashInstellingen: CashInstellingen;
-  trigger: "cron" | "handmatig";
+  trigger: RunTrigger;
   now?: Date;
 }
 
@@ -49,7 +49,7 @@ const isDatum = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 export async function runSync(opts: SyncOptions): Promise<SyncResultaat> {
   const { store, sem, dryRun, startDate } = opts;
 
-  const vorige = await store.laatsteVoltooideRun();
+  const vorige = await store.laatsteVoltooideRun(dryRun);
   const windowTo = datumNL(opts.now ?? new Date());
   let windowFrom = vorige ? minDagen(vorige.window_to, LOOKBACK_DAGEN) : startDate;
   if (windowFrom < startDate) windowFrom = startDate;
@@ -61,6 +61,13 @@ export async function runSync(opts: SyncOptions): Promise<SyncResultaat> {
   try {
     const mappings = await store.laadMappings();
     const batches = await sem.fetchBatches(windowFrom);
+    if (!dryRun) {
+      // Batches die alleen in de proefstand zijn verwerkt (bijv. vóór het live gaan) alsnog boeken,
+      // ook als ze buiten het venster vallen.
+      const open = new Set(await store.batchesMetProefFacturen());
+      for (const b of batches) open.delete(b.BatchNumber);
+      if (open.size > 0) batches.push(...(await sem.fetchBatches(startDate)).filter((b) => open.has(b.BatchNumber)));
+    }
     t.n_batches = batches.length;
 
     for (const batch of batches) {

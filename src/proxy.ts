@@ -12,11 +12,17 @@ export function proxy(req: NextRequest) {
 
   const header = req.headers.get("authorization") ?? "";
   if (header.startsWith("Basic ")) {
-    const decoded = atob(header.slice(6));
-    const i = decoded.indexOf(":");
-    if (i >= 0 && safeEqual(decoded.slice(0, i).trim(), user) && safeEqual(decoded.slice(i + 1).trim(), password)) {
-      return NextResponse.next();
+    let decoded = "";
+    try {
+      decoded = atob(header.slice(6).trim());
+    } catch {
+      /* ongeldige base64: behandelen als niet ingelogd */
     }
+    const i = decoded.indexOf(":");
+    // Beide altijd vergelijken, zodat de tijd niet verraadt of de gebruikersnaam klopt.
+    const naamOk = safeEqual(i >= 0 ? decoded.slice(0, i) : "", user);
+    const wachtwoordOk = safeEqual(i >= 0 ? decoded.slice(i + 1) : "", password);
+    if (naamOk && wachtwoordOk) return NextResponse.next();
   }
 
   return new NextResponse("Inloggen vereist", {
@@ -26,5 +32,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/cron|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api/cron/|_next/static/|_next/image|favicon.ico).*)"],
 };

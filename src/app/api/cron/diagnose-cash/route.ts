@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { safeEqual } from "@/lib/auth";
+import { weigerZonderCronGeheim } from "@/lib/auth";
+import { redigeer } from "@/lib/dashboard/resultaat";
 import { leesEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -14,8 +15,8 @@ const HEADERS = { Accept: "*/*", "Content-Type": "application/json;charset=UTF-8
 const rijen = (x: unknown): Record<string, string>[] => (x == null ? [] : Array.isArray(x) ? x : Object.values(x as object));
 
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? "";
-  if (!safeEqual(auth, `Bearer ${leesEnv("CRON_SECRET") ?? ""}`)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const geweigerd = weigerZonderCronGeheim(req);
+  if (geweigerd) return geweigerd;
 
   const base = (leesEnv("CASH_BASE_URL") ?? "https://www.cashweb.nl/api/4.0").replace(/\/+$/, "");
   const key = leesEnv("CASH_API_KEY") ?? "";
@@ -36,9 +37,9 @@ export async function GET(req: NextRequest) {
       } catch {
         /* geen JSON */
       }
-      return { http: res.status, json, tekst: json ? undefined : tekst.slice(0, 300) };
+      return { http: res.status, json, tekst: json ? undefined : redigeer(tekst.slice(0, 300)) };
     } catch (e) {
-      return { http: 0, json: null, tekst: e instanceof Error ? e.message : String(e) };
+      return { http: 0, json: null, tekst: redigeer(e instanceof Error ? e.message : String(e)) };
     }
   }
 

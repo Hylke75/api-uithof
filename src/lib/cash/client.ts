@@ -64,9 +64,20 @@ type Veld = Record<`F${string}`, string>;
 
 /** Bedrag in centen naar CASH-notatie: "1264,50" / "-100,00". */
 export function cashBedrag(cents: number): string {
+  if (!Number.isSafeInteger(cents)) throw new Error(`Ongeldig bedrag in centen: ${cents}`);
   const teken = cents < 0 ? "-" : "";
   const abs = Math.abs(cents);
   return `${teken}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, "0")}`;
+}
+
+/** Boekperiodes (JJPP) van een maand vóór tot een maand na een datum (YYYY-MM-DD). */
+export function periodesRond(datum: string): [string, string] {
+  const maand = (delta: number) => {
+    const d = new Date(`${datum.slice(0, 7)}-01T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() + delta);
+    return cashDatum(d.toISOString().slice(0, 10)).slice(0, 4);
+  };
+  return [maand(-1), maand(1)];
 }
 
 /** YYYY-MM-DD naar CASH-datum (JJMMDD). */
@@ -79,8 +90,8 @@ export function controleerBoeking(b: CashBoeking): string[] {
   const p: string[] = [];
   if (!/^\d{1,6}$/.test(b.debiteurnummer)) p.push(`Debiteurnummer "${b.debiteurnummer}" past niet in CASH (max. 6 cijfers)`);
   if (!/^\d{1,6}$/.test(b.factuurnummer)) p.push(`Factuurnummer "${b.factuurnummer}" past niet in CASH (max. 6 cijfers)`);
-  if (!b.dagboek) p.push("CASH-dagboek is niet ingesteld");
-  if (!b.debiteurenGrootboek) p.push("CASH-debiteurenrekening is niet ingesteld");
+  if (!/^[A-Za-z0-9]{1,6}$/.test(b.dagboek)) p.push(`CASH-dagboek "${b.dagboek}" ontbreekt of past niet (max. 6 tekens)`);
+  if (!b.debiteurenGrootboek || b.debiteurenGrootboek.length > 6) p.push(`Debiteurenrekening "${b.debiteurenGrootboek}" ontbreekt of past niet in CASH (max. 6 tekens)`);
   for (const r of b.regels) {
     if (!r.grootboekrekening || r.grootboekrekening.length > 6) p.push(`Grootboekrekening "${r.grootboekrekening}" past niet in CASH (max. 6 tekens)`);
     if (r.kostenplaats && r.kostenplaats.length > 3) p.push(`Kostenplaats "${r.kostenplaats}" past niet in CASH (max. 3 tekens)`);
@@ -160,6 +171,13 @@ export interface CashConfig {
   pendingWachtMs?: number;
 }
 
+/** Hosts waarnaar CASH een leesverzoek mag doorverwijzen. */
+function toegestaneDoorverwijzing(url: URL): boolean {
+  if (url.protocol !== "https:") return false;
+  const h = url.hostname.toLowerCase();
+  return h === "www.cashweb.nl" || h.endsWith(".cashweb.nl") || h.endsWith(".blob.core.windows.net");
+}
+
 export function createCashClient(config: CashConfig) {
   const base = config.baseUrl.replace(/\/+$/, "");
 
@@ -171,11 +189,16 @@ export function createCashClient(config: CashConfig) {
       signal: AbortSignal.timeout(config.timeoutMs ?? 60_000),
     });
     // CASH verwijst grote antwoorden door naar externe opslag (Azure); die weigert onze sleutel.
+    // Alleen bij lezen (GET) volgen, alleen via https naar CASH of Azure-opslag, en zonder sleutel.
     const locatie = res.headers.get("location");
-    if (res.status >= 300 && res.status < 400 && locatie) {
-      const doel = new URL(locatie, `${base}/`);
-      res = await fetch(doel, { signal: AbortSignal.timeout(config.timeoutMs ?? 60_000) });
-      if (!res.ok) return { status: res.status, body: `doorverwezen naar ${doel.host}: ${(await res.text()).slice(0, 300)}` };
+    if (res.status >= 300 && res.status < 400) {
+      const methode = (init.method ?? "GET").toUpperCase();
+      const doel = locatie ? new URL(locatie, `${base}/`) : null;
+      if (methode !== "GET" || !doel || !toegestaneDoorverwijzing(doel)) {
+        return { status: res.status, body: `onverwachte doorverwijzing (${methode}) naar ${doel?.host ?? "onbekend"}` };
+      }
+      res = await fetch(doel, { redirect: "error", signal: AbortSignal.timeout(config.timeoutMs ?? 60_000) });
+      if (!res.ok) return { status: res.status, body: `doorverwezen naar ${doel.host}: HTTP ${res.status}` };
     }
     const tekst = await res.text();
     let body: unknown = tekst;
@@ -195,11 +218,13 @@ export function createCashClient(config: CashConfig) {
       await new Promise((r) => setTimeout(r, config.pendingWachtMs ?? 3_000));
       const { status, body } = await request(`/transaction/${encodeURIComponent(id)}`);
       const b = body as { status?: string; error?: string } | null;
-      if (status === 200 && b?.status === "Success") return;
-      if (status === 200 && b?.status === "Pending") continue;
-      if (b?.error) throw new CashAfgewezenError(`CASH-transactie ${id}: ${kort(body)}`);
+      if (status !== 200) continue; // status opvragen mislukt: uitkomst nog onbekend, opnieuw proberen
+      if (b?.status === "Success") return;
+      if (b?.status === "Pending") continue;
+      // Alleen een expliciete foutstatus van de transactie zelf betekent: niets verwerkt.
+      if (b?.error || b?.status === "Error" || b?.status === "Failed") throw new CashAfgewezenError(`CASH-transactie ${id}: ${kort(body)}`);
     }
-    throw new Error(`CASH-transactie ${id} staat na ${pogingen} pogingen nog op Pending; uitkomst onbekend.`);
+    throw new Error(`CASH-transactie ${id}: na ${pogingen} pogingen geen eindstatus; uitkomst onbekend.`);
   }
 
   return {
@@ -232,7 +257,8 @@ export function createCashClient(config: CashConfig) {
         if (id) await wachtOpTransactie(id);
         return;
       }
-      if (status !== 200 && status !== 201) throw new CashAfgewezenError(`HTTP ${status} ${kort(body)}`);
+      if (status >= 400 && status < 500 && status !== 408) throw new CashAfgewezenError(`HTTP ${status} ${kort(body)}`);
+      if (status !== 200 && status !== 201) throw new Error(`CASH: HTTP ${status} ${kort(body)}; uitkomst onbekend.`);
     },
 
     async boekFactuur(boeking: CashBoeking) {

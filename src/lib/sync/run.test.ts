@@ -17,6 +17,9 @@ function memoryStore(mappings: Mappings, vorigeWindowTo: string | null = null) {
       runs.push({ ...run, status: "running" });
       return `run-${runs.length}`;
     },
+    async batchesMetProefFacturen() {
+      return [...new Set([...facturen.values()].filter((f) => f.status === "proef").map((f) => f.sem_batch_number))];
+    },
     async finishRun(id, patch) {
       Object.assign(runs[Number(id.split("-")[1]) - 1], patch);
     },
@@ -239,5 +242,22 @@ describe("runSync", () => {
     await runSync({ ...basis, store: memoryStore(mappings).store, sem: a.sem, cash: cashSpy().client, dryRun: true });
 
     expect(a.vensters).toEqual(["2026-09-24", "2026-09-28", "2026-01-01"]);
+  });
+
+  it("boekt bij live gaan ook proeffacturen uit een batch buiten het venster", async () => {
+    const { store, facturen } = memoryStore(mappings, "2026-10-20");
+    await runSync({ ...basis, store, sem: semMet().sem, cash: cashSpy().client, dryRun: true });
+    expect(facturen.get("1877")!.status).toBe("proef");
+
+    // SEM geeft batch 41 alleen terug als je van ver genoeg terug vraagt.
+    const { sem: alle } = semMet();
+    const vensters: string[] = [];
+    const sem: SemClient = { ...alle, fetchBatches: async (from) => (vensters.push(from), from <= "2026-10-01" ? alle.fetchBatches(from) : []) };
+    const cash = cashSpy();
+    const r = await runSync({ ...basis, store, sem, cash: cash.client, dryRun: false });
+
+    expect(vensters).toEqual(["2026-10-13", "2026-01-01"]);
+    expect(r).toMatchObject({ n_batches: 1, n_geboekt: 1 });
+    expect(facturen.get("1877")!.status).toBe("geboekt");
   });
 });

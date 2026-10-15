@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import { redigeer } from "@/lib/dashboard/resultaat";
 import Link from "next/link";
 import { StatusBanners } from "@/components/banners";
 import { datum, euro, tijd } from "@/components/format";
@@ -108,7 +109,7 @@ export default async function Facturen({ searchParams }: { searchParams: Promise
                         <FactuurStatusPill status={f.status} />
                       </td>
                       <td>{tijd(f.updated_at)}</td>
-                      <td className="breed muted">{f.foutmelding}</td>
+                      <td className="breed muted">{f.foutmelding ? redigeer(f.foutmelding) : null}</td>
                     </tr>
                   ))}
                 </tbody>

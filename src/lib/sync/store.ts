@@ -4,6 +4,11 @@ import type { Mappings } from "./mapping";
 
 export type FactuurStatus = "nieuw" | "proef" | "geboekt" | "fout" | "gewijzigd_na_boeking";
 export type RunStatus = "running" | "success" | "partial" | "failed";
+/** "test" = testboeking of proef op één batch; telt niet mee voor het venster van de nachtelijke sync. */
+export type RunTrigger = "cron" | "handmatig" | "test";
+
+/** Na zoveel minuten geldt een run die nog op "running" staat als vastgelopen. */
+const VASTGELOPEN_MINUTEN = 15;
 
 export interface RunTellingen {
   n_batches: number;
@@ -42,8 +47,12 @@ export interface BestaandeFactuur {
 
 /** Opslaglaag van de sync; los van Supabase zodat de logica testbaar is. */
 export interface SyncStore {
-  laatsteVoltooideRun(): Promise<{ window_to: string } | null>;
-  startRun(run: { dry_run: boolean; trigger: "cron" | "handmatig"; window_from: string; window_to: string }): Promise<string>;
+  /** Laatste geslaagde run van dezelfde soort (proef of echt), zonder testruns. */
+  laatsteVoltooideRun(dryRun: boolean): Promise<{ window_to: string } | null>;
+  /** Start een run; weigert als er al een run loopt (slot in de database). */
+  startRun(run: { dry_run: boolean; trigger: RunTrigger; window_from: string; window_to: string }): Promise<string>;
+  /** Batchnummers met facturen die nog in de proefstand staan (nog nooit echt geboekt). */
+  batchesMetProefFacturen(): Promise<number[]>;
   finishRun(id: string, patch: Partial<RunTellingen> & { status: RunStatus; error?: string | null }): Promise<void>;
   bestaandeFacturen(semIds: string[]): Promise<Map<string, BestaandeFactuur>>;
   /** Alleen status-velden bijwerken, bv. bij een wijziging na boeking. */
@@ -66,12 +75,14 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
 
 export function supabaseStore(sb: SupabaseClient): SyncStore {
   return {
-    async laatsteVoltooideRun() {
+    async laatsteVoltooideRun(dryRun) {
       const data = check(
         await sb
           .from("sync_runs")
           .select("window_to")
           .in("status", ["success", "partial"])
+          .eq("dry_run", dryRun)
+          .neq("trigger", "test")
           .order("window_to", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -80,8 +91,22 @@ export function supabaseStore(sb: SupabaseClient): SyncStore {
     },
 
     async startRun(run) {
-      const data = check(await sb.from("sync_runs").insert(run).select("id").single());
-      return data!.id as string;
+      const grens = new Date(Date.now() - VASTGELOPEN_MINUTEN * 60_000).toISOString();
+      check(
+        await sb
+          .from("sync_runs")
+          .update({ status: "failed", error: "Vastgelopen (afgebroken of time-out).", finished_at: new Date().toISOString() })
+          .eq("status", "running")
+          .lt("started_at", grens),
+      );
+      const res = await sb.from("sync_runs").insert(run).select("id").single();
+      if (res.error?.code === "23505") throw new Error("Er loopt al een sync; probeer het over een paar minuten opnieuw.");
+      return check(res)!.id as string;
+    },
+
+    async batchesMetProefFacturen() {
+      const data = check(await sb.from("sem_facturen").select("sem_batch_number").eq("status", "proef"));
+      return [...new Set((data ?? []).map((r) => r.sem_batch_number as number))];
     },
 
     async finishRun(id, patch) {

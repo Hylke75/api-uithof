@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CashAfgewezenError, cashBedrag, cashDatum, controleerBoeking, createCashClient, naarRecords, type CashBoeking } from "./client";
+import { CashAfgewezenError, cashBedrag, cashDatum, controleerBoeking, createCashClient, naarRecords, periodesRond, type CashBoeking } from "./client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -22,6 +22,12 @@ const boeking: CashBoeking = {
 boeking.totaalInclCents = 106000 + 21540;
 
 describe("CASH-formaten", () => {
+  it("geeft de boekperiodes rond een datum, ook over de jaargrens", () => {
+    expect(periodesRond("2026-07-10")).toEqual(["2606", "2608"]);
+    expect(periodesRond("2026-01-05")).toEqual(["2512", "2602"]);
+    expect(() => cashBedrag(12.5)).toThrow();
+  });
+
   it("formatteert bedragen en datums", () => {
     expect(cashBedrag(126450)).toBe("1264,50");
     expect(cashBedrag(-5)).toBe("-0,05");
@@ -141,5 +147,35 @@ describe("createCashClient", () => {
     const fetch = mockFetch();
     await expect(client().boekFactuur({ ...boeking, debiteurnummer: "1234567" })).rejects.toBeInstanceOf(CashAfgewezenError);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("ziet een mislukte statusvraag niet als weigering (uitkomst onbekend)", async () => {
+    mockFetch([202, { status: "Pending", transaction: "abc" }], [401, { error: "Unauthorized" }], [503, { error: "Busy" }]);
+    const e = await client().boekFactuur(boeking).catch((x) => x);
+    expect(e).not.toBeInstanceOf(CashAfgewezenError);
+    expect(e.message).toContain("uitkomst onbekend");
+  });
+
+  it("volgt geen doorverwijzing bij het boeken (uitkomst onbekend)", async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 302, headers: { location: "https://x.blob.core.windows.net/a" } }));
+    vi.stubGlobal("fetch", fetch);
+    const e = await client().boekFactuur(boeking).catch((x) => x);
+    expect(e).not.toBeInstanceOf(CashAfgewezenError);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("volgt bij lezen alleen een doorverwijzing naar CASH of Azure-opslag, zonder sleutel", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "https://evil.example.com/x" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "https://x.blob.core.windows.net/a" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ R0301: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(client().mutaties("demo", "2607", "VERKS", "1")).rejects.toBeInstanceOf(CashAfgewezenError);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await expect(client().mutaties("demo", "2607", "VERKS", "1")).resolves.toEqual([]);
+    const tweede = fetch.mock.calls[2] as unknown as [URL, RequestInit];
+    expect(String(tweede[0])).toBe("https://x.blob.core.windows.net/a");
+    expect(tweede[1].headers).toBeUndefined();
   });
 });

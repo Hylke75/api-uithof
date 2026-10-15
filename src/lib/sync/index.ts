@@ -1,5 +1,5 @@
-import { cashBedrag, cashDatum, createCashClient } from "@/lib/cash/client";
-import { env } from "@/lib/env";
+import { cashBedrag, cashDatum, createCashClient, periodesRond } from "@/lib/cash/client";
+import { env, leesEnv } from "@/lib/env";
 import { createSemClient, type SemClient } from "@/lib/sem/client";
 import { db } from "@/lib/supabase";
 import type { CashInstellingen } from "./mapping";
@@ -26,9 +26,17 @@ function cashInstellingenVan(
   };
 }
 
-/** Start een sync met de productieconfiguratie uit de omgevingsvariabelen. */
+/**
+ * Start een sync met de productieconfiguratie uit de omgevingsvariabelen. Echt boeken buiten de
+ * testadministratie kan alleen als CASH_LIVE_ADMINISTRATIE bewust op dezelfde administratie staat.
+ */
 export async function startSync(trigger: "cron" | "handmatig") {
   const e = env();
+  if (!e.SYNC_DRY_RUN && e.CASH_ADMINISTRATIE !== TEST_ADMINISTRATIE && leesEnv("CASH_LIVE_ADMINISTRATIE") !== e.CASH_ADMINISTRATIE) {
+    throw new Error(
+      `Sync geweigerd: echt boeken in administratie "${e.CASH_ADMINISTRATIE}" vereist CASH_LIVE_ADMINISTRATIE=${e.CASH_ADMINISTRATIE}.`,
+    );
+  }
   const inst = await laadInstellingen(db());
   return runSync({
     store: supabaseStore(db()),
@@ -71,28 +79,33 @@ export async function herstelTestboeking(batchNumber: number, invoiceId: number,
   let tegengeboekt = 0;
   const [dagboekOud, stuk] = String(data.cash_boeking_id ?? "").split(" ")[0].split("/");
   const dagboek = (dagboekOud ?? "").toUpperCase();
-  if (data.status === "geboekt" && dagboek && stuk) {
+  if (data.status === "nieuw" || data.status === "gewijzigd_na_boeking") {
+    throw new Error(`Herstel geweigerd: factuur heeft status "${data.status}". Controleer eerst in CASH wat er geboekt is.`);
+  }
+  if (data.status === "geboekt") {
+    if (!dagboek || !stuk || !data.factuurdatum) throw new Error("Herstel geweigerd: boekstuk of factuurdatum van de oude boeking ontbreekt.");
     // De correctie krijgt "9" + het oude nummer; CASH staat maximaal 6 cijfers toe.
     if (stuk.replace(/^0+/, "").length > 5) {
       throw new Error(`Herstel kan niet voor ${dagboek}/${stuk}: het correctienummer zou te lang worden. Corrigeer dit boekstuk in CASH.`);
     }
     const cash = createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY });
     const datum = String(data.factuurdatum);
-    const oud = await stap("oude boeking lezen", () => cash.mutaties(TEST_ADMINISTRATIE, cashDatum(datum).slice(0, 4), dagboek, stuk));
-    if (oud.length > 0) {
-      const tegen = oud.map((m) => ({
-        F0901: dagboek,
-        F0302: cashDatum(datum),
-        // CASH weigert een bestaand boekstuknummer; daarom een eigen nummer voor de correctie.
-        F0303: `9${stuk.replace(/^0+/, "").padStart(5, "0")}`,
-        F0201: m.F0201,
-        ...(m.F0101 ? { F0101: m.F0101 } : {}),
-        F0306: `Correctie ${dagboek}/${stuk}`,
-        F0307: cashBedrag(-Math.round(Number(String(m.F0307).replace(",", ".")) * 100)),
-      }));
-      await stap("tegenboeken", () => cash.importeerRecords(TEST_ADMINISTRATIE, tegen));
-      tegengeboekt = tegen.length;
-    }
+    const [van, tot] = periodesRond(datum);
+    const oud = await stap("oude boeking lezen", () => cash.mutaties(TEST_ADMINISTRATIE, van, dagboek, stuk, tot));
+    // Niet gevonden: dan niet opnieuw boeken, anders staat hij er mogelijk twee keer in.
+    if (oud.length === 0) throw new Error(`Herstel gestopt: ${dagboek}/${stuk} niet gevonden in CASH; er is niets gewijzigd.`);
+    const tegen = oud.map((m) => ({
+      F0901: dagboek,
+      F0302: cashDatum(datum),
+      // CASH weigert een bestaand boekstuknummer; daarom een eigen nummer voor de correctie.
+      F0303: `9${stuk.replace(/^0+/, "").padStart(5, "0")}`,
+      F0201: m.F0201,
+      ...(m.F0101 ? { F0101: m.F0101 } : {}),
+      F0306: `Correctie ${dagboek}/${stuk}`,
+      F0307: cashBedrag(-Math.round(Number(String(m.F0307).replace(",", ".")) * 100)),
+    }));
+    await stap("tegenboeken", () => cash.importeerRecords(TEST_ADMINISTRATIE, tegen));
+    tegengeboekt = tegen.length;
   }
 
   const { error: e2 } = await sb
@@ -144,6 +157,6 @@ export async function startTestboeking(batchNumber: number, { invoiceId, proef =
     dryRun: proef,
     startDate: "2000-01-01",
     cashInstellingen: cashInstellingenVan(e, inst, { administratie: TEST_ADMINISTRATIE, dagboek }),
-    trigger: "handmatig",
+    trigger: "test",
   });
 }

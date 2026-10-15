@@ -1,8 +1,15 @@
 /** Uitkomst van een server-side ophaalactie: data, of een veilige foutmelding (nooit een sleutel). */
 export type Resultaat<T> = { ok: true; data: T } | { ok: false; fout: string };
 
-/** Lange token-achtige reeksen (API-keys, JWT's) maskeren in meldingen. */
+/** Omgevingsvariabelen met geheimen; hun letterlijke waarde komt nooit in een melding. */
+const GEHEIMEN = ["SEM_API_KEY", "CASH_API_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CRON_SECRET", "ADMIN_PASSWORD"];
+
+/** Geheimen en lange token-achtige reeksen (API-keys, JWT's) maskeren in meldingen. */
 export function redigeer(tekst: string): string {
+  for (const naam of GEHEIMEN) {
+    const waarde = process.env[naam]?.trim();
+    if (waarde && waarde.length >= 6) tekst = tekst.split(waarde).join("[sleutel verborgen]");
+  }
   return tekst
     .replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, "[token verborgen]")
     .replace(/\b(sb_(secret|publishable)_)[A-Za-z0-9_-]+/g, "$1…")

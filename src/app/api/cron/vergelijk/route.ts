@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { safeEqual } from "@/lib/auth";
-import { cashDatum, createCashClient, naarRecords, type CashBoeking } from "@/lib/cash/client";
-import { env, leesEnv } from "@/lib/env";
+import { weigerZonderCronGeheim } from "@/lib/auth";
+import { redigeer } from "@/lib/dashboard/resultaat";
+import { createCashClient, naarRecords, periodesRond, type CashBoeking } from "@/lib/cash/client";
+import { env } from "@/lib/env";
 import { db } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,8 @@ export const maxDuration = 120;
 const centen = (s: string) => Math.round(Number(String(s).replace(",", ".")) * 100);
 
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? "";
-  if (!safeEqual(auth, `Bearer ${leesEnv("CRON_SECRET") ?? ""}`)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const geweigerd = weigerZonderCronGeheim(req);
+  if (geweigerd) return geweigerd;
   const batch = Number(req.nextUrl.searchParams.get("batch"));
   if (!Number.isInteger(batch) || batch <= 0) return NextResponse.json({ error: "batch ontbreekt" }, { status: 400 });
   const dagboekVast = req.nextUrl.searchParams.get("dagboek")?.trim().toUpperCase();
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
     .select("factuurnummer, status, cash_payload")
     .eq("sem_batch_number", batch)
     .order("factuurnummer");
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: redigeer(error.message) }, { status: 500 });
 
   const e = env();
   const cash = createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY });
@@ -42,12 +43,8 @@ export async function GET(req: NextRequest) {
     for (const r of naarRecords(b)) koppeling.set(r.F0201, (koppeling.get(r.F0201) ?? 0) + centen(r.F0307));
 
     // Boekperiode in CASH kan afwijken van de factuurdatum: zoek een maand ervoor tot een maand erna.
-    const maand = (delta: number) => {
-      const d = new Date(`${b.boekdatum.slice(0, 7)}-01T00:00:00Z`);
-      d.setUTCMonth(d.getUTCMonth() + delta);
-      return cashDatum(d.toISOString().slice(0, 10)).slice(0, 4);
-    };
-    const inCash = await cash.mutaties(b.administratie, maand(-1), dagboekVast || b.dagboek.toUpperCase(), b.factuurnummer, maand(1));
+    const [van, tot] = periodesRond(b.boekdatum);
+    const inCash = await cash.mutaties(b.administratie, van, dagboekVast || b.dagboek.toUpperCase(), b.factuurnummer, tot);
     const handmatig = new Map<string, number>();
     for (const m of inCash) handmatig.set(m.F0201, (handmatig.get(m.F0201) ?? 0) + centen(m.F0307));
 

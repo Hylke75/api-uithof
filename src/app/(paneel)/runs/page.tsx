@@ -1,4 +1,5 @@
 import { ChevronRight } from "lucide-react";
+import { redigeer } from "@/lib/dashboard/resultaat";
 import { datum, tijd } from "@/components/format";
 import { InlineFout, Kaart, Leeg, PageHeader, Pill, RunStatusPill } from "@/components/ui";
 import { runs } from "@/lib/dashboard/data";
@@ -64,7 +65,7 @@ export default async function Runs() {
                       <RunStatusPill status={r.status} />
                     </td>
                     <td>{r.dry_run ? <Pill toon="warning">Proef</Pill> : <Pill toon="info">Live</Pill>}</td>
-                    <td>{r.trigger === "handmatig" ? "Handmatig" : "Gepland"}</td>
+                    <td>{r.trigger === "handmatig" ? "Handmatig" : r.trigger === "test" ? "Test (demo)" : "Gepland"}</td>
                     <td>{datum(r.window_from)}</td>
                     <td className="num">{r.n_batches}</td>
                     <td className="num">{r.n_opgehaald}</td>
@@ -78,7 +79,7 @@ export default async function Runs() {
                           <summary>
                             <ChevronRight className="chevron" size={16} aria-hidden /> {r.error.split("\n").length} melding(en)
                           </summary>
-                          {r.error}
+                          {redigeer(r.error)}
                           <br />
                           <span className="mono muted">run {r.id}</span>
                         </details>

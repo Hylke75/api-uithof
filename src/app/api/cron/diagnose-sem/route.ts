@@ -1,10 +1,9 @@
-import { request as httpsRequest } from "node:https";
 import { NextResponse, type NextRequest } from "next/server";
-import { safeEqual } from "@/lib/auth";
+import { weigerZonderCronGeheim } from "@/lib/auth";
+import { redigeer } from "@/lib/dashboard/resultaat";
 import { leesEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
@@ -27,56 +26,26 @@ function samenvatting(body: unknown, alles = false) {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? "";
-  if (!safeEqual(auth, `Bearer ${leesEnv("CRON_SECRET") ?? ""}`)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const geweigerd = weigerZonderCronGeheim(req);
+  if (geweigerd) return geweigerd;
 
-  // ?omgeving=demo test dezelfde sleutel tegen de SEM-testomgeving (om te zien bij welke omgeving hij hoort).
-  const base =
-    req.nextUrl.searchParams.get("omgeving") === "demo"
-      ? "https://apidemo.smarteventmanager.com"
-      : (leesEnv("SEM_BASE_URL") ?? "").replace(/\/+$/, "").replace(/\/api$/i, "");
+  const base = (leesEnv("SEM_BASE_URL") ?? "").replace(/\/+$/, "").replace(/\/api$/i, "");
   const key = leesEnv("SEM_API_KEY") ?? "";
   const van = req.nextUrl.searchParams.get("van") ?? "2000-01-01";
   const batch = req.nextUrl.searchParams.get("batch");
   const alles = req.nextUrl.searchParams.get("alles") === "1";
-
-  // ?methode=get: zoals het voorbeeld in de SEM-documentatie, GET met de filter in de body.
-  // fetch() staat geen body bij GET toe, daarom via node:https.
-  const m = req.nextUrl.searchParams.get("methode");
-  // "get" en "https-post" gaan via node:https; zonder parameter via fetch (zoals de sync).
-  const methode = m === "get" ? "GET" : m === "https-post" ? "HTTPS-POST" : "POST";
-  // Varianten voor GET: zonder body en/of met een eigen querystring (bijv. FromModifiedAt=2025-03-01).
-  const zonderBody = req.nextUrl.searchParams.get("zonderbody") === "1";
-  const qs = req.nextUrl.searchParams.get("qs") ?? "";
-  function getMetBody(url: string, body: string, method = "GET"): Promise<{ status: number; headers: unknown; text: () => Promise<string> }> {
-    return new Promise((resolve, reject) => {
-      const r = httpsRequest(
-        url,
-        { method, headers: { Accept: "application/json", "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), ApiKey: key }, timeout: 30_000 },
-        (res) => {
-          let data = "";
-          res.on("data", (c) => (data += c));
-          res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, text: async () => data }));
-        },
-      );
-      r.on("error", reject);
-      r.on("timeout", () => r.destroy(new Error("timeout")));
-      r.end(body);
-    });
-  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(van)) return NextResponse.json({ error: "van moet JJJJ-MM-DD zijn" }, { status: 400 });
+  if (batch != null && !/^\d{1,9}$/.test(batch)) return NextResponse.json({ error: "batch moet een nummer zijn" }, { status: 400 });
 
   async function post(pad: string, body: unknown) {
     const start = Date.now();
     try {
-      const res =
-        methode !== "POST"
-          ? await getMetBody(`${base}/api/${pad}${qs ? `?${qs}` : ""}`, zonderBody ? "" : JSON.stringify(body), methode === "GET" ? "GET" : "POST")
-          : await fetch(`${base}/api/${pad}`, {
-              method: "POST",
-              headers: { Accept: "application/json", "Content-Type": "application/json", ApiKey: key },
-              body: JSON.stringify(body),
-              signal: AbortSignal.timeout(30_000),
-            });
+      const res = await fetch(`${base}/api/${pad}`, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json", ApiKey: key },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      });
       const tekst = await res.text();
       let json: unknown = null;
       try {
@@ -84,10 +53,9 @@ export async function GET(req: NextRequest) {
       } catch {
         /* geen JSON */
       }
-      return { pad, methode, verzoek: body, http: res.status, ms: Date.now() - start, antwoord: json ? samenvatting(json, alles) : tekst.slice(0, 500),
-        ...(res.status >= 400 ? { kopregels: "headers" in res && !(res.headers instanceof Headers) ? res.headers : Object.fromEntries((res as Response).headers.entries()), lengte: tekst.length } : {}) };
+      return { pad, verzoek: body, http: res.status, ms: Date.now() - start, antwoord: json ? samenvatting(json, alles) : redigeer(tekst.slice(0, 300)) };
     } catch (e) {
-      return { pad, verzoek: body, fout: e instanceof Error ? e.message : String(e) };
+      return { pad, verzoek: body, fout: redigeer(e instanceof Error ? e.message : String(e)) };
     }
   }
 

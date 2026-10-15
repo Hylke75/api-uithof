@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { safeEqual } from "@/lib/auth";
+import { weigerZonderCronGeheim } from "@/lib/auth";
 import { redigeer } from "@/lib/dashboard/resultaat";
-import { leesEnv } from "@/lib/env";
 import { herstelTestboeking, startTestboeking } from "@/lib/sync";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +15,8 @@ export const maxDuration = 120;
  * Beveiligd met CRON_SECRET; weigert elke andere administratie.
  */
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? "";
-  if (!safeEqual(auth, `Bearer ${leesEnv("CRON_SECRET") ?? ""}`)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const geweigerd = weigerZonderCronGeheim(req);
+  if (geweigerd) return geweigerd;
 
   const batch = Number(req.nextUrl.searchParams.get("batch"));
   const factuur = req.nextUrl.searchParams.get("factuur");

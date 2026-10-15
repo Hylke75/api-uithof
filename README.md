@@ -148,7 +148,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync
 2. Laat de contactpersoon van De Uithof akkoord geven.
 3. Stel `SYNC_START_DATE` in op de eerste factuurdatum die *niet* meer handmatig geïmporteerd wordt.
    Anders worden facturen dubbel geboekt.
-4. Zet `SYNC_DRY_RUN=false` en `CASH_ADMINISTRATIE` op de productieadministratie.
+4. Zet `SYNC_DRY_RUN=false`, `CASH_ADMINISTRATIE` op de productieadministratie en `CASH_LIVE_ADMINISTRATIE` op dezelfde waarde (veiligheidsslot). Haal daarna de testboekingen uit de database (`testdata-opruimen`, vóór het omzetten).
 
 ## Openstaande punten
 
