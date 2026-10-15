@@ -16,7 +16,7 @@ export default async function Runs() {
     <>
       <PageHeader
         titel="Synchronisatieruns"
-        intro="Elke synchronisatie (nachtelijk gepland of handmatig gestart). Een run in proefmodus verwerkt facturen maar boekt niets in CASH. De controle van verbindingen is geen run en staat hier niet."
+        intro="Elke synchronisatie (nachtelijk gepland, handmatig gestart, of een testboeking in demo). Een run in proefmodus verwerkt facturen maar boekt niets in CASH. De controle van verbindingen is geen run en staat hier niet."
       />
       <Kaart>
         {!lijst.ok ? (

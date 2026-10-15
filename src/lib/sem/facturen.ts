@@ -20,9 +20,10 @@ const OMSCHRIJVING_PER_SOORT: Record<string, string> = { VERSCH: "Afrondingsvers
 /**
  * Bouwt per factuur een SemFactuur uit de journaalposten van een batch.
  *
- * SEM levert per factuur een sluitende journaalpost (vastgesteld op de testomgeving, batch 94):
+ * SEM levert per factuur een sluitende journaalpost:
  * - DEB: debiteurregel, debet = totaal incl. btw, op de debiteurenrekening;
- * - OPB: omzetregels (met InvoiceLineID), credit = bedrag excl. btw, TaxAmount = btw van de regel;
+ * - OPB/KASSA/KOR/VERSCH: omzetregels, credit = bedrag excl. btw, TaxAmount = btw van de regel
+ *   (VERSCH = afrondingsverschil, KASSA/VERSCH zonder btw);
  * - BHO/BLA/…: btw-regels per tarief, credit = btw-bedrag, op de btw-rekening.
  * BaseAmount is op omzetregels 0 en wordt dus niet gebruikt. Credit telt positief (factuur),
  * debet negatief (creditnota).

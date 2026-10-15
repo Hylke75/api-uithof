@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { weigerZonderCronGeheim } from "@/lib/auth";
 import { redigeer } from "@/lib/dashboard/resultaat";
-import { createCashClient, naarRecords, periodesRond, type CashBoeking } from "@/lib/cash/client";
+import { centenUitCash as centen, createCashClient, naarRecords, periodesRond, type CashBoeking } from "@/lib/cash/client";
 import { env } from "@/lib/env";
 import { db } from "@/lib/supabase";
 
@@ -14,7 +14,6 @@ export const maxDuration = 120;
  * (zelfde boekstuknummer; standaard het dagboek uit de omzetting), opgeteld per grootboekrekening.
  * Alleen lezen.
  */
-const centen = (s: string) => Math.round(Number(String(s).replace(",", ".")) * 100);
 
 export async function GET(req: NextRequest) {
   const geweigerd = weigerZonderCronGeheim(req);

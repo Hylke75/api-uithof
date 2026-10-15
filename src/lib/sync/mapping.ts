@@ -23,7 +23,6 @@ export interface CashInstellingen {
   dagboek: string;
   debiteurenGrootboek: string;
   /** Kostenplaatsen uit SEM niet meesturen (bijv. zolang er geen vertaling naar CASH is). */
-  kostenplaatsNegeren?: boolean;
 }
 
 export type MapResult = { ok: true; boeking: CashBoeking } | { ok: false; fouten: string[] };
@@ -67,8 +66,6 @@ export function mapFactuur(factuur: SemFactuur, mappings: Mappings, cash: CashIn
     regels.push({
       grootboekrekening: gb?.grootboekrekening ?? r.grootboek,
       btwGrootboek,
-      ...(r.kostenplaats && !cash.kostenplaatsNegeren ? { kostenplaats: r.kostenplaats } : {}),
-      ...(r.kostendrager ? { kostendrager: r.kostendrager } : {}),
       omschrijving: r.omschrijving,
       bedragExclCents: r.bedragExclCents,
       btwCents: r.btwCents,

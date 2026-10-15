@@ -60,10 +60,6 @@ export default async function Instellingen() {
             <dd>
               <Waarde r={config.debiteurenGrootboek} />
             </dd>
-            <dt>Debiteuren voorschot</dt>
-            <dd>
-              <Waarde r={config.debiteurenVoorschot} />
-            </dd>
           </dl>
           <p className="toelichting">
             De debiteurenrekening per factuur komt uit de debiteurregel van SEM (bijv. 1300 of 1320); de ingestelde rekening is de terugval.

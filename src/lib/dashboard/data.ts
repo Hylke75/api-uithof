@@ -1,20 +1,12 @@
 import { leesEnv, ontbrekendeInstellingen } from "@/lib/env";
 import { db } from "@/lib/supabase";
 import { laadInstellingen } from "@/lib/sync/store";
+import { STATUS_LABEL, type FactuurStatus } from "@/lib/status";
 import { probeer, redigeer, type Resultaat } from "./resultaat";
 
 /** Leesfuncties voor het beheerpaneel. Alle data komt uit Supabase; niets wordt verzonnen. */
 
-export const STATUSSEN = ["proef", "nieuw", "geboekt", "fout", "gewijzigd_na_boeking"] as const;
-export type FactuurStatus = (typeof STATUSSEN)[number];
-
-export const STATUS_LABEL: Record<string, string> = {
-  proef: "Proef (niet geboekt)",
-  nieuw: "Uitkomst onbekend",
-  geboekt: "Geboekt",
-  fout: "Fout",
-  gewijzigd_na_boeking: "Gewijzigd na boeking",
-};
+export { STATUSSEN, STATUS_LABEL, type FactuurStatus } from "@/lib/status";
 
 export interface Configuratie {
   proefmodus: boolean;
@@ -25,7 +17,6 @@ export interface Configuratie {
   administratie: string;
   dagboek: Resultaat<string>;
   debiteurenGrootboek: Resultaat<string>;
-  debiteurenVoorschot: Resultaat<string>;
   startDatum: string;
   startFactuur: Resultaat<string>;
   supabaseUrl: string;
@@ -50,7 +41,6 @@ export async function configuratie(): Promise<Configuratie> {
     administratie: leesEnv("CASH_ADMINISTRATIE") ?? "",
     dagboek: uitInst("CASH_DAGBOEK", "cash_dagboek"),
     debiteurenGrootboek: uitInst("CASH_GB_DEBITEUREN", "cash_gb_debiteuren"),
-    debiteurenVoorschot: uitInst("CASH_GB_DEBITEUREN_VOORSCHOT", "cash_gb_debiteuren_voorschot"),
     startDatum: leesEnv("SYNC_START_DATE") ?? "",
     startFactuur: uitInst("SYNC_START_FACTUUR", "start_factuurnummer"),
     supabaseUrl: (leesEnv("SUPABASE_URL") ?? "").replace(/\/rest\/v1\/?$/, ""),

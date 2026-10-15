@@ -57,8 +57,10 @@ export async function GET(req: NextRequest) {
     const lijst = rijen((m.json as { R0301?: unknown } | null)?.R0301).filter(
       (r) => (!dagboekFilter || r.F0901 === dagboekFilter) && (!stukFilter || Number(r.F0303) === Number(stukFilter)),
     );
-    const stukken = [...new Set(lijst.map((r) => r.F0303))].sort();
-    mutaties = { http: m.http, aantal: lijst.length, stukken: { aantal: stukken.length, eerste: stukken[0], laatste: stukken.at(-1) }, lijst: lijst.slice(0, 50), fout: m.tekst };
+    // Boekstuknummers lopen per dagboek door: alleen tonen als er op één dagboek gefilterd is.
+    const nummers = [...new Set(lijst.map((r) => Number(r.F0303)).filter((n) => Number.isFinite(n) && n > 0))].sort((a, b) => a - b);
+    const stukken = dagboekFilter ? { aantal: nummers.length, eerste: nummers[0] ?? null, laatste: nummers.at(-1) ?? null } : undefined;
+    mutaties = { http: m.http, aantal: lijst.length, stukken, lijst: lijst.slice(0, 50), fout: m.tekst };
   }
 
   return NextResponse.json({

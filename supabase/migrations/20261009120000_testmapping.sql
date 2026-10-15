@@ -1,3 +1,4 @@
+-- LET OP: alleen voor de testfase; 20261017000000_productie.sql haalt de testkoppelingen weer weg.
 -- Vertaling van de rekeningen uit de SEM-TESTomgeving (apidemo) naar CASH, voor testboekingen
 -- in administratie "demo". Het live SEM van De Uithof gebruikt naar verwachting al CASH-nummers.
 insert into public.map_grootboek (sem_grootboek, grootboekrekening, omschrijving, actief) values

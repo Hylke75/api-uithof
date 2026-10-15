@@ -1,18 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { weigerZonderCronGeheim } from "@/lib/auth";
 import { redigeer } from "@/lib/dashboard/resultaat";
-import { herstelTestboeking, startTestboeking } from "@/lib/sync";
+import { startTestboeking } from "@/lib/sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
- * POST /api/cron/testboeking?batch=94&factuur=1989
- * Met &dagboek=VERK: in een ander dagboek van de testadministratie boeken.
- * Met &proef=1: alleen omzetten en tonen, niets naar CASH.
- * Met &herstel=1: eerst de oude (mislukte) boeking in CASH tegenboeken, dan opnieuw boeken.
+ * Alleen voor administratie "demo"; weigert in productie.
+ * POST /api/cron/testboeking?batch=1005[&factuur=21396][&proef=1][&dagboek=VERK]
  * Boekt één SEM-factuur (of een hele batch) echt in de CASH-testadministratie "demo".
- * Beveiligd met CRON_SECRET; weigert elke andere administratie.
+ * &proef=1: alleen omzetten en tonen, niets naar CASH. &dagboek=: ander dagboek in demo.
  */
 export async function POST(req: NextRequest) {
   const geweigerd = weigerZonderCronGeheim(req);
@@ -24,14 +22,10 @@ export async function POST(req: NextRequest) {
 
   const dagboek = req.nextUrl.searchParams.get("dagboek")?.trim().toUpperCase() || undefined;
   if (dagboek && !/^[A-Z0-9]{1,6}$/.test(dagboek)) return NextResponse.json({ error: "ongeldig dagboek" }, { status: 400 });
+  if (factuur && !/^\d{1,9}$/.test(factuur)) return NextResponse.json({ error: "factuur moet een nummer zijn" }, { status: 400 });
   const invoiceId = factuur ? Number(factuur) : undefined;
 
   try {
-    if (req.nextUrl.searchParams.get("herstel") === "1") {
-      if (invoiceId == null) return NextResponse.json({ error: "factuur ontbreekt" }, { status: 400 });
-      const h = await herstelTestboeking(batch, invoiceId, dagboek);
-      return NextResponse.json(h, { status: h.nieuw.status === "failed" ? 500 : 200 });
-    }
     const r = await startTestboeking(batch, { invoiceId, proef: req.nextUrl.searchParams.get("proef") === "1", dagboek });
     return NextResponse.json(r, { status: r.status === "failed" ? 500 : 200 });
   } catch (e) {

@@ -8,9 +8,10 @@ import { TEST_ADMINISTRATIE } from "@/lib/sync";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/cron/testdata-opruimen?facturen=1965,1989&debiteuren=50246
- * Verwijdert facturen en debiteurkoppelingen uit de SEM-testomgeving uit de database, zodat ze
- * niet botsen met de echte SEM-gegevens. Alleen zolang er in CASH-administratie "demo" wordt geboekt.
+ * Alleen voor administratie "demo"; weigert in productie.
+ * POST /api/cron/testdata-opruimen?facturen=21396,21397[&debiteuren=50246]
+ * Verwijdert testfacturen en testdebiteurkoppelingen uit de database, zodat ze niet in de weg
+ * zitten bij het live gaan.
  */
 export async function POST(req: NextRequest) {
   const geweigerd = weigerZonderCronGeheim(req);

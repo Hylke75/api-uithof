@@ -1,9 +1,7 @@
-import { importBericht, naarRecords, type CashBoeking } from "@/lib/cash/client";
+import { centenUitCash as centen, importBericht, naarRecords, type CashBoeking } from "@/lib/cash/client";
 import type { SemFactuur } from "@/lib/sem/client";
 import { euro } from "./format";
 
-/** "1264,50" -> 126450 */
-const centen = (bedrag: string) => Math.round(Number(bedrag.replace(",", ".")) * 100);
 
 /** Factuurregels zoals SEM ze leverde, met de controle tegen het factuurtotaal. */
 export function SemRegels({ sem }: { sem: SemFactuur }) {

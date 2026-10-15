@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SemBatch } from "@/lib/sem/client";
 import type { Mappings } from "./mapping";
 
-export type FactuurStatus = "nieuw" | "proef" | "geboekt" | "fout" | "gewijzigd_na_boeking";
+import type { FactuurStatus } from "@/lib/status";
+export type { FactuurStatus };
 export type RunStatus = "running" | "success" | "partial" | "failed";
 /** "test" = testboeking of proef op één batch; telt niet mee voor het venster van de nachtelijke sync. */
 export type RunTrigger = "cron" | "handmatig" | "test";
@@ -58,6 +59,8 @@ export interface SyncStore {
   /** Alleen status-velden bijwerken, bv. bij een wijziging na boeking. */
   markeerFactuur(semId: string, patch: { status: FactuurStatus; foutmelding: string; laatste_run_id: string }): Promise<void>;
   upsertFactuur(row: FactuurRow): Promise<void>;
+  /** Verwijdert een factuur die nooit geboekt is (bijv. een proefrij van vóór de overstap). */
+  verwijderProefFactuur(semId: string): Promise<void>;
   upsertBatch(b: { batch: SemBatch; runId: string; nFacturen: number; fout: string | null }): Promise<void>;
   laadMappings(): Promise<Mappings>;
 }
@@ -143,6 +146,10 @@ export function supabaseStore(sb: SupabaseClient): SyncStore {
           .from("sem_facturen")
           .upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: "sem_factuur_id" }),
       );
+    },
+
+    async verwijderProefFactuur(semId) {
+      check(await sb.from("sem_facturen").delete().eq("sem_factuur_id", semId).eq("status", "proef"));
     },
 
     async upsertBatch({ batch, runId, nFacturen, fout }) {

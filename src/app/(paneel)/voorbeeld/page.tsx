@@ -4,11 +4,12 @@ import { CashRegels, SemRegels } from "@/components/boeking";
 import { datum, euro } from "@/components/format";
 import { Banner, Kaart, Leeg, PageHeader, Pill } from "@/components/ui";
 import { probeer, redigeer } from "@/lib/dashboard/resultaat";
-import { leesEnv } from "@/lib/env";
+import { env, leesEnv } from "@/lib/env";
 import { createSemClient, type SemBatch, type SemFactuur } from "@/lib/sem/client";
 import { bouwFacturen } from "@/lib/sem/facturen";
 import { db } from "@/lib/supabase";
-import { mapFactuur, type Mappings } from "@/lib/sync/mapping";
+import { cashInstellingenVan, startFactuurnummerVan } from "@/lib/sync";
+import { mapFactuur, type CashInstellingen, type Mappings } from "@/lib/sync/mapping";
 import { laadInstellingen, supabaseStore } from "@/lib/sync/store";
 
 export const maxDuration = 300;
@@ -36,14 +37,16 @@ const maandVan = (d: string) => {
 export default async function Voorbeeld({ searchParams }: { searchParams: Promise<{ van?: string; tot?: string }> }) {
   const sp = await searchParams;
 
-  const mapRes = await probeer(async () => ({ mappings: await supabaseStore(db()).laadMappings(), inst: await laadInstellingen(db()) }));
+  // Dezelfde instellingen als de sync zelf, zodat het voorbeeld laat zien wat er echt gebeurt.
+  const mapRes = await probeer(async () => {
+    const inst = await laadInstellingen(db());
+    return { mappings: await supabaseStore(db()).laadMappings(), cash: cashInstellingenVan(env(), inst), start: startFactuurnummerVan(inst) };
+  });
   const mappings: Mappings = mapRes.ok ? mapRes.data.mappings : { grootboek: new Map(), btwGrootboek: new Map(), debiteur: new Map() };
-  const inst = mapRes.ok ? mapRes.data.inst : {};
-  const cashInstellingen = {
-    administratie: leesEnv("CASH_ADMINISTRATIE") ?? "",
-    dagboek: leesEnv("CASH_DAGBOEK") ?? inst.cash_dagboek ?? "",
-    debiteurenGrootboek: leesEnv("CASH_GB_DEBITEUREN") ?? inst.cash_gb_debiteuren ?? "",
-  };
+  const cashInstellingen: CashInstellingen = mapRes.ok ? mapRes.data.cash : { administratie: "", dagboek: "", debiteurenGrootboek: "" };
+  const startNummer = mapRes.ok ? mapRes.data.start : undefined;
+  const startDatum = leesEnv("SYNC_START_DATE") ?? "";
+  const alInCash = (f: SemFactuur) => f.factuurdatum < startDatum || (startNummer != null && Number(f.factuurnummer) < startNummer);
 
   const sem = createSemClient({ baseUrl: leesEnv("SEM_BASE_URL") ?? "", apiKey: leesEnv("SEM_API_KEY") ?? "" });
   // Alle batches (filter op aanmaakdatum doen we zelf: oude batches zijn niet "recent gewijzigd").
@@ -77,8 +80,10 @@ export default async function Voorbeeld({ searchParams }: { searchParams: Promis
   }
   facturen.sort((a, b) => a.factuurdatum.localeCompare(b.factuurdatum) || a.factuurnummer.localeCompare(b.factuurnummer, "nl", { numeric: true }));
 
-  const resultaten = facturen.map((f) => ({ f, m: mapFactuur(f, mappings, cashInstellingen) }));
-  const nOk = resultaten.filter((r) => r.m.ok).length;
+  const resultaten = facturen.map((f) => ({ f, m: mapFactuur(f, mappings, cashInstellingen), overslaan: alInCash(f) }));
+  const nOverslaan = resultaten.filter((r) => r.overslaan).length;
+  const nOk = resultaten.filter((r) => !r.overslaan && r.m.ok).length;
+  const nProbleem = resultaten.length - nOverslaan - nOk;
   const totaal = facturen.reduce((s, f) => s + (f.totaalInclCents ?? 0), 0);
 
   return (
@@ -139,15 +144,15 @@ export default async function Voorbeeld({ searchParams }: { searchParams: Promis
             <div className="kpi-waarde">{facturen.length}</div>
           </div>
           <div className="kaart">
-            <span className="kpi-label">Klaar om te boeken</span>
+            <span className="kpi-label">Klaar om te boeken{nOverslaan > 0 ? ` · ${nOverslaan} al in CASH` : ""}</span>
             <div className="kpi-waarde" style={{ color: "var(--color-success)" }}>
               {nOk}
             </div>
           </div>
           <div className="kaart">
             <span className="kpi-label">Met een probleem · totaal {euro(totaal)}</span>
-            <div className="kpi-waarde" style={{ color: nOk < facturen.length ? "var(--color-danger)" : undefined }}>
-              {facturen.length - nOk}
+            <div className="kpi-waarde" style={{ color: nProbleem > 0 ? "var(--color-danger)" : undefined }}>
+              {nProbleem}
             </div>
           </div>
         </div>
@@ -159,7 +164,7 @@ export default async function Voorbeeld({ searchParams }: { searchParams: Promis
         </Kaart>
       )}
 
-      {resultaten.map(({ f, m }) => (
+      {resultaten.map(({ f, m, overslaan }) => (
         <Kaart key={f.id}>
           <details className="uitklap">
             <summary>
@@ -170,7 +175,13 @@ export default async function Voorbeeld({ searchParams }: { searchParams: Promis
               <span className="muted">
                 {datum(f.factuurdatum)} · debiteur {f.debiteurnummer} · batch {f.batchNumber} · {euro(f.totaalInclCents ?? 0)}
               </span>
-              <span style={{ marginLeft: "auto" }}>{m.ok ? <Pill toon="success">Klaar om te boeken</Pill> : <Pill toon="danger">Probleem</Pill>}</span>
+              <span style={{ marginLeft: "auto" }}>{overslaan ? (
+                  <Pill toon="neutral">Al in CASH (vóór de overstap)</Pill>
+                ) : m.ok ? (
+                  <Pill toon="success">Klaar om te boeken</Pill>
+                ) : (
+                  <Pill toon="danger">Probleem</Pill>
+                )}</span>
             </summary>
             {!m.ok && (
               <Banner toon="danger" titel="Wordt niet geboekt">

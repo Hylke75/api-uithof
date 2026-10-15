@@ -59,10 +59,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const proeven = [
-    post("JournalEntryBatches/GetJournalEntryBatches", { JournalEntryBatchFilter: { FromModifiedAt: `${van}T00:00` } }),
-    post("JournalEntryBatches/GetJournalEntryBatches", { JournalEntryBatchFilter: {} }),
-  ];
+  const proeven = [post("JournalEntryBatches/GetJournalEntryBatches", { JournalEntryBatchFilter: { FromModifiedAt: `${van}T00:00` } })];
   if (batch) {
     proeven.push(post("JournalEntries/GetJournalEntries", { JournalEntryFilter: { BatchNumber: batch } }));
     proeven.push(post("Invoices/GetInvoices", { InvoiceFilter: { BatchNumbers: [Number(batch)] }, InvoiceLoadOptions: { DoLoadInvoiceLines: false } }));

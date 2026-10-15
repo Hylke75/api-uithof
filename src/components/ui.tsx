@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, ChevronRight, CircleHelp, Info, Loader2, XCircle } from "lucide-react";
+import { STATUS_LABEL } from "@/lib/status";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { VerbindingStatus } from "@/lib/dashboard/resultaat";
@@ -18,13 +19,7 @@ export function Pill({ toon, children, icoon = true }: { toon: Toon; children: R
 }
 
 const FACTUUR_TOON: Record<string, Toon> = { proef: "warning", nieuw: "warning", geboekt: "success", fout: "danger", gewijzigd_na_boeking: "danger" };
-const FACTUUR_LABEL: Record<string, string> = {
-  proef: "Proef (niet geboekt)",
-  nieuw: "Uitkomst onbekend",
-  geboekt: "Geboekt",
-  fout: "Fout",
-  gewijzigd_na_boeking: "Gewijzigd na boeking",
-};
+const FACTUUR_LABEL = STATUS_LABEL;
 export function FactuurStatusPill({ status }: { status: string }) {
   return <Pill toon={FACTUUR_TOON[status] ?? "neutral"}>{FACTUUR_LABEL[status] ?? status}</Pill>;
 }

@@ -120,7 +120,9 @@ async function verwerkFactuur(
     (isDatum(factuur.factuurdatum) && factuur.factuurdatum < startDate) ||
     (ctx.startFactuurnummer != null && Number.isFinite(nummer) && nummer < ctx.startFactuurnummer);
   if (voorOverstap) {
-    // Van vóór de overstap: die zit al via de handmatige import in CASH.
+    // Van vóór de overstap: die zit al via de handmatige import in CASH. Een oude proefrij
+    // weghalen, anders blijft de batch elke nacht als "nog te boeken" terugkomen.
+    if (vorigeVersie?.status === "proef") await store.verwijderProefFactuur(factuur.id);
     t.n_overgeslagen++;
     return;
   }

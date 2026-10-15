@@ -13,7 +13,7 @@ const boeking: CashBoeking = {
   omschrijving: "Factuur 10319",
   totaalInclCents: 126450,
   regels: [
-    { grootboekrekening: "8000", btwGrootboek: "1510", kostenplaats: "200", omschrijving: "Zaalhuur grote zaal met extra lange naam", bedragExclCents: 100000, btwCents: 21000 },
+    { grootboekrekening: "8000", btwGrootboek: "1510", omschrijving: "Zaalhuur grote zaal met extra lange naam", bedragExclCents: 100000, btwCents: 21000 },
     { grootboekrekening: "8100", btwGrootboek: "1520", omschrijving: "Lunch", bedragExclCents: 5000, btwCents: 450 },
     { grootboekrekening: "8100", btwGrootboek: "1520", omschrijving: "Koffie", bedragExclCents: 1000, btwCents: 90 },
   ],
@@ -54,7 +54,9 @@ describe("CASH-formaten", () => {
       ["1510", "-210,00"],
       ["1520", "-5,40"],
     ]);
-    expect(records[1]).toMatchObject({ F0911: "200", F0306: "Zaalhuur grote zaal met e" });
+    // Geen kostenplaats meesturen: CASH vult die zelf in vanuit de grootboekrekening.
+    expect(records[1]).toMatchObject({ F0306: "Zaalhuur grote zaal met e" });
+    expect(records[1]).not.toHaveProperty("F0911");
     const som = records.reduce((s, r) => s + Number(r.F0307.replace(",", ".")) * 100, 0);
     expect(Math.round(som)).toBe(0);
   });
@@ -88,9 +90,9 @@ describe("CASH-formaten", () => {
 
   it("controleert veldlengtes", () => {
     expect(controleerBoeking(boeking)).toEqual([]);
-    const fout = controleerBoeking({ ...boeking, factuurnummer: "2026-0001", regels: [{ ...boeking.regels[0], kostenplaats: "2000" }] });
+    const fout = controleerBoeking({ ...boeking, factuurnummer: "2026-0001", dagboek: "VERKOOP1" });
     expect(fout.join(" ")).toContain("Factuurnummer");
-    expect(fout.join(" ")).toContain("Kostenplaats");
+    expect(fout.join(" ")).toContain("dagboek");
   });
 });
 

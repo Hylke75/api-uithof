@@ -33,6 +33,10 @@ export async function GET(req: NextRequest) {
     CASH_BASE_URL: host("CASH_BASE_URL"),
     CASH_API_KEY: vorm("CASH_API_KEY"),
     CASH_ADMINISTRATIE: leesEnv("CASH_ADMINISTRATIE") ?? null,
+    CASH_LIVE_ADMINISTRATIE: leesEnv("CASH_LIVE_ADMINISTRATIE") ?? null,
+    CASH_DAGBOEK: leesEnv("CASH_DAGBOEK") ?? null,
     SYNC_DRY_RUN: leesEnv("SYNC_DRY_RUN") ?? null,
+    SYNC_START_DATE: leesEnv("SYNC_START_DATE") ?? null,
+    SYNC_START_FACTUUR: leesEnv("SYNC_START_FACTUUR") ?? null,
   });
 }

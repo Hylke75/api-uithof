@@ -7,7 +7,7 @@
  * Een verkoopfactuur wordt geïmporteerd als set grootboekmutaties (record 301) in het
  * verkoopdagboek, die samen op nul sluiten:
  * - debiteurregel: debiteurenrekening, relatienr, factuurnummer, bedrag incl. btw (+)
- * - omzetregels: grootboek (+ kostenplaats), bedrag excl. btw (−)
+ * - omzetregels: grootboek, bedrag excl. btw (−); de kostenplaats vult CASH zelf in vanuit de rekening
  * - btw-regels: per btw-grootboekrekening het btw-bedrag (−)
  * Een creditnota heeft dezelfde regels met omgekeerde tekens.
  */
@@ -16,8 +16,6 @@ export interface CashBoekingRegel {
   grootboekrekening: string;
   /** Grootboekrekening waarop de btw van deze regel geboekt wordt (leeg als er geen btw is). */
   btwGrootboek: string;
-  kostenplaats?: string;
-  kostendrager?: string;
   omschrijving: string;
   bedragExclCents: number;
   btwCents: number;
@@ -80,6 +78,11 @@ export function periodesRond(datum: string): [string, string] {
   return [maand(-1), maand(1)];
 }
 
+/** CASH-bedrag ("1264,50" / "-100,00") naar centen. */
+export function centenUitCash(bedrag: string): number {
+  return Math.round(Number(String(bedrag).replace(",", ".")) * 100);
+}
+
 /** YYYY-MM-DD naar CASH-datum (JJMMDD). */
 export function cashDatum(datum: string): string {
   return `${datum.slice(2, 4)}${datum.slice(5, 7)}${datum.slice(8, 10)}`;
@@ -94,7 +97,6 @@ export function controleerBoeking(b: CashBoeking): string[] {
   if (!b.debiteurenGrootboek || b.debiteurenGrootboek.length > 6) p.push(`Debiteurenrekening "${b.debiteurenGrootboek}" ontbreekt of past niet in CASH (max. 6 tekens)`);
   for (const r of b.regels) {
     if (!r.grootboekrekening || r.grootboekrekening.length > 6) p.push(`Grootboekrekening "${r.grootboekrekening}" past niet in CASH (max. 6 tekens)`);
-    if (r.kostenplaats && r.kostenplaats.length > 3) p.push(`Kostenplaats "${r.kostenplaats}" past niet in CASH (max. 3 tekens)`);
     if (r.btwCents !== 0 && !r.btwGrootboek && !b.btwRegels?.length) p.push(`Regel "${r.omschrijving}" heeft btw maar geen btw-grootboekrekening`);
   }
   const btw = btwRegelsVan(b);
@@ -139,7 +141,6 @@ export function naarRecords(b: CashBoeking): Veld[] {
     records.push({
       ...gemeenschappelijk,
       F0201: r.grootboekrekening.toUpperCase(),
-      ...(r.kostenplaats ? { F0911: r.kostenplaats.toUpperCase() } : {}),
       F0306: omschrijving(r.omschrijving || b.omschrijving),
       F0307: cashBedrag(-r.bedragExclCents),
     });
@@ -228,12 +229,6 @@ export function createCashClient(config: CashConfig) {
   }
 
   return {
-    async administraties(): Promise<unknown> {
-      const { status, body } = await request("/administrations");
-      if (status !== 200) throw new CashAfgewezenError(`CASH /administrations: HTTP ${status} ${kort(body)}`);
-      return body;
-    },
-
     /** Grootboekmutaties (record 301) van één dagboek en stuknummer in een periode JJPP. */
     async mutaties(admin: string, periode: string, dagboek: string, stuk: string, totPeriode = periode): Promise<Veld[]> {
       const q = `?admin=${encodeURIComponent(admin)}&params=${encodeURIComponent(`${periode}|${totPeriode}`)}`;
@@ -242,23 +237,6 @@ export function createCashClient(config: CashConfig) {
       const r = (body as { R0301?: unknown } | null)?.R0301;
       const lijst = (r == null ? [] : Array.isArray(r) ? r : Object.values(r as object)) as Veld[];
       return lijst.filter((m) => m.F0901 === dagboek && Number(m.F0303) === Number(stuk));
-    },
-
-    /** Losse record-301-regels importeren (bijv. een correctie). Moeten samen op nul sluiten. */
-    async importeerRecords(admin: string, records: Veld[]) {
-      const saldo = records.reduce((s, r) => s + Math.round(Number(r.F0307.replace(",", ".")) * 100), 0);
-      if (saldo !== 0) throw new CashAfgewezenError(`Correctie sluit niet (saldo ${saldo} cent)`);
-      const { status, body } = await request("/import", {
-        method: "POST",
-        body: JSON.stringify({ admin, format: 0, content: { cash: records.map((r) => ({ R301: [r] })) } }),
-      });
-      if (status === 202) {
-        const id = (body as { transaction?: string } | null)?.transaction;
-        if (id) await wachtOpTransactie(id);
-        return;
-      }
-      if (status >= 400 && status < 500 && status !== 408) throw new CashAfgewezenError(`HTTP ${status} ${kort(body)}`);
-      if (status !== 200 && status !== 201) throw new Error(`CASH: HTTP ${status} ${kort(body)}; uitkomst onbekend.`);
     },
 
     async boekFactuur(boeking: CashBoeking) {

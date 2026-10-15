@@ -34,6 +34,9 @@ function memoryStore(mappings: Mappings, vorigeWindowTo: string | null = null) {
     async upsertFactuur(row) {
       facturen.set(row.sem_factuur_id, { ...facturen.get(row.sem_factuur_id), ...row });
     },
+    async verwijderProefFactuur(id) {
+      if (facturen.get(id)?.status === "proef") facturen.delete(id);
+    },
     async upsertBatch({ batch, nFacturen, fout }) {
       batches.set(batch.BatchNumber, { nFacturen, fout });
     },
@@ -271,5 +274,17 @@ describe("runSync", () => {
 
     const r2 = await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: false, startFactuurnummer: 10319 });
     expect(r2).toMatchObject({ n_overgeslagen: 0, n_geboekt: 1 });
+  });
+
+  it("haalt een proefrij van vóór de overstap weg in plaats van hem te laten hangen", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    await runSync({ ...basis, store, sem: semMet().sem, cash: cashSpy().client, dryRun: true });
+    expect(facturen.get("1877")!.status).toBe("proef");
+
+    const cash = cashSpy();
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: false, startFactuurnummer: 20000 });
+    expect(r).toMatchObject({ n_overgeslagen: 1, n_geboekt: 0 });
+    expect(facturen.has("1877")).toBe(false);
+    expect(cash.geboekt).toHaveLength(0);
   });
 });

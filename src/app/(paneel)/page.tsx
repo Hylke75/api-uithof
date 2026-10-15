@@ -11,9 +11,18 @@ import { verbindingen } from "@/lib/dashboard/verbindingen";
 
 export const maxDuration = 300;
 
+function hostVan(url: string): string {
+  if (!url) return "(niet ingesteld)";
+  try {
+    return new URL(url).host;
+  } catch {
+    return "(ongeldige URL)";
+  }
+}
+
 export default async function Overzicht() {
   const [config, telling] = await Promise.all([configuratie(), factuurTelling()]);
-  const semHost = config.semUrl ? new URL(config.semUrl).host : "(niet ingesteld)";
+  const semHost = hostVan(config.semUrl);
   const uitleg = telling.ok ? undefined : "Niet beschikbaar";
   const t = telling.ok ? telling.data : null;
 
@@ -156,12 +165,6 @@ async function VerbindingenSectie({ config }: { config: Configuratie }) {
               <dt>Debiteurenrekening</dt>
               <dd>
                 {config.debiteurenGrootboek.ok ? <code>{config.debiteurenGrootboek.data || "niet ingesteld"}</code> : "niet beschikbaar"}
-                {config.debiteurenVoorschot.ok && config.debiteurenVoorschot.data && (
-                  <>
-                    {" "}
-                    · voorschot <code>{config.debiteurenVoorschot.data}</code>
-                  </>
-                )}
               </dd>
               <dt>Verkoopdagboek</dt>
               <dd>{dagboek ? <code>{dagboek}</code> : <span className="muted">niet ingesteld</span>}</dd>
