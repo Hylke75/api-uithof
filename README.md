@@ -48,7 +48,7 @@ bepaalt de server (`SYNC_DRY_RUN`). Ontwerp volgens `design-brief/` (tokens in `
 
 | Waar | Wat |
 |---|---|
-| tabel `instellingen` | `cash_dagboek` (VERKS), `cash_gb_debiteuren` (1300, terugval), `start_factuurnummer` (823515) |
+| tabel `instellingen` | `cash_dagboek` (VERKS), `cash_gb_debiteuren` (1300, terugval), `start_factuurnummer` (823498) |
 | `map_btwcode` | SEM-btw-code → CASH-btw-rekening, voor btw zonder aparte btw-regel |
 | `map_grootboek` / `map_debiteur` | Optioneel: afwijkende rekening- of debiteurnummers. Zonder rij 1-op-1 |
 
