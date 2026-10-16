@@ -48,12 +48,21 @@ bepaalt de server (`SYNC_DRY_RUN`). Ontwerp volgens `design-brief/` (tokens in `
 
 | Waar | Wat |
 |---|---|
-| tabel `instellingen` | `cash_dagboek` (VERKS), `cash_gb_debiteuren` (1300, terugval), `start_factuurnummer` (823498) |
+| tabel `instellingen` | `cash_dagboek` (VERKS), `cash_gb_debiteuren` (1300, terugval), `start_factuurnummer` (823498), `melding_aan`, `melding_dagelijks_tot` |
 | `map_btwcode` | SEM-btw-code → CASH-btw-rekening, voor btw zonder aparte btw-regel |
 | `map_grootboek` / `map_debiteur` | Optioneel: afwijkende rekening- of debiteurnummers. Zonder rij 1-op-1 |
 
 Het live SEM gebruikt al de rekeningnummers van CASH. Kostenplaatsen worden niet meegestuurd: CASH vult ze zelf
 in vanuit de grootboekrekening. Omgevingsvariabelen: zie `.env.example`.
+
+## Mails
+
+Na elke nachtelijke run (`src/lib/melding.ts`, via Resend vanaf `sync@linkandlead.nl`):
+- **Foutmail, altijd:** als de run mislukt, een factuur een fout krijgt, of de sync niet kan starten.
+- **Samenvatting:** elke nacht, tot en met de datum in `melding_dagelijks_tot`.
+
+Ontvanger: `melding_aan`. Vereist `RESEND_API_KEY` in Vercel; zonder sleutel wordt niets verstuurd.
+Testen: `POST /api/cron/testmail` (of `?soort=fout`).
 
 ## Statussen van facturen
 
@@ -103,6 +112,7 @@ in vanuit de grootboekrekening. Omgevingsvariabelen: zie `.env.example`.
 | `GET /api/cron/diagnose-sem?van=JJJJ-MM-DD[&batch=][&alles=1]` | Alleen lezen: SEM-batches en -journaalposten |
 | `GET /api/cron/diagnose-cash?[admin=][&periode=JJPP\|JJPP&dagboek=&stuk=]` | Alleen lezen: CASH, incl. geboekte regels |
 | `GET /api/cron/vergelijk?batch=[&dagboek=]` | Omzetting naast de boekingen in CASH, per rekening |
+| `POST /api/cron/testmail[?soort=fout]` | Voorbeeldmail naar de ingestelde ontvanger |
 | `POST /api/cron/testboeking?batch=[&factuur=][&proef=1][&dagboek=]` | **Alleen demo:** één batch/factuur boeken of proefdraaien |
 | `POST /api/cron/testdata-opruimen?facturen=` | **Alleen demo:** testfacturen uit de database halen |
 

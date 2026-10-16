@@ -2,7 +2,7 @@
 export type Resultaat<T> = { ok: true; data: T } | { ok: false; fout: string };
 
 /** Omgevingsvariabelen met geheimen; hun letterlijke waarde komt nooit in een melding. */
-const GEHEIMEN = ["SEM_API_KEY", "CASH_API_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CRON_SECRET", "ADMIN_PASSWORD"];
+const GEHEIMEN = ["SEM_API_KEY", "CASH_API_KEY", "SUPABASE_SERVICE_ROLE_KEY", "CRON_SECRET", "ADMIN_PASSWORD", "RESEND_API_KEY"];
 
 /** Geheimen en lange token-achtige reeksen (API-keys, JWT's) maskeren in meldingen. */
 export function redigeer(tekst: string): string {
