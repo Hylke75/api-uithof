@@ -1,7 +1,9 @@
 import type { SemRelatie } from "@/lib/sem/client";
 import type { Veld } from "./client";
 
-const schoon = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
+// "|" is het veldscheidingsteken van CASH en mag nergens in een waarde staan.
+const schoon = (s: string | null | undefined) => (s ?? "").replace(/\|/g, "-").replace(/\s+/g, " ").trim();
+const LIDWOORDEN = new Set(["DE", "HET", "EEN", "THE", "VAN"]);
 const max = (s: string, n: number) => s.slice(0, n).trim();
 
 /**
@@ -20,7 +22,8 @@ export function relatieRecord(r: SemRelatie): Veld | null {
   const land = (schoon(r.InvoiceCountryCode) || schoon(r.PostalCountryCode) || "NL").toUpperCase().slice(0, 2);
   if (!/^\d{1,6}$/.test(nummer) || !naam || !plaats) return null;
 
-  const zoeknaam = (naam.toUpperCase().match(/[A-Z0-9]+/)?.[0] ?? nummer).slice(0, 10);
+  const woorden = naam.toUpperCase().match(/[A-Z0-9]+/g) ?? [];
+  const zoeknaam = (woorden.find((w) => !LIDWOORDEN.has(w)) ?? woorden[0] ?? nummer).slice(0, 10);
   const email = schoon(r.EMailAddress);
   return {
     F0101: nummer,

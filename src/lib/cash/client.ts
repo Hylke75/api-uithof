@@ -130,7 +130,8 @@ export function naarRecords(b: CashBoeking): Veld[] {
     F0302: cashDatum(b.boekdatum),
     F0303: b.factuurnummer.padStart(6, "0"),
   };
-  const omschrijving = (s: string) => s.slice(0, 25);
+  // "|" is het veldscheidingsteken van CASH en mag niet in een omschrijving staan.
+  const omschrijving = (s: string) => s.replace(/\|/g, "-").slice(0, 25);
 
   const records: Veld[] = [
     {

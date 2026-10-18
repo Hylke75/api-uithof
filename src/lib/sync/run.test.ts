@@ -110,6 +110,7 @@ function semMet(opts: { totaalIn?: number; extra?: Partial<SemJournaalpost>; fac
 
 function cashSpy(fout?: Error, opties: { relaties?: number[]; deelsGeboekt?: boolean } = {}) {
   const geboekt: CashBoeking[] = [];
+  const aangemaakt: Record<string, string>[] = [];
   const client: CashClient = {
     async boekFactuur(b) {
       if (fout) throw fout;
@@ -122,9 +123,11 @@ function cashSpy(fout?: Error, opties: { relaties?: number[]; deelsGeboekt?: boo
     async boekstukBestaat() {
       return opties.deelsGeboekt ?? false;
     },
-    async maakRelatie() {},
+    async maakRelatie(_admin, record) {
+      aangemaakt.push(record);
+    },
   };
-  return { client, geboekt };
+  return { client, geboekt, aangemaakt };
 }
 
 const basis = {
@@ -325,5 +328,31 @@ describe("runSync", () => {
     const { relationId, ...zonder } = facturen.get("1877")!.sem_payload as Record<string, unknown>;
     expect(relationId).toBeDefined();
     expect(contentHash(zonder)).toBe(hashVoor);
+  });
+
+  it("maakt een ontbrekende debiteur aan met de gegevens uit SEM en boekt daarna", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    const { sem } = semMet();
+    const metKlant: SemClient = { ...sem, fetchFacturen: async (b) => (await sem.fetchFacturen(b)).map((k) => ({ ...k, RelationID: 501 })) };
+    const cash = cashSpy(undefined, { relaties: [] });
+    const r = await runSync({ ...basis, store, sem: metKlant, cash: cash.client, dryRun: false, relatiesAanmaken: true });
+    expect(cash.aangemaakt).toEqual([expect.objectContaining({ F0101: "10001", F0103: "Klant BV", F0107: "1234 AB Utrecht" })]);
+    expect(r).toMatchObject({ n_geboekt: 1, n_fout: 0 });
+    expect(facturen.get("1877")!.status).toBe("geboekt");
+  });
+
+  it("boekt niet als de klant in SEM geen adres heeft", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    const { sem } = semMet();
+    const zonderAdres: SemClient = {
+      ...sem,
+      fetchFacturen: async (b) => (await sem.fetchFacturen(b)).map((k) => ({ ...k, RelationID: 502 })),
+      fetchRelatie: async (id) => ({ RelationID: id, DebtorNumber: "10001", OrganizationName: "Klant BV" }),
+    };
+    const cash = cashSpy(undefined, { relaties: [] });
+    const r = await runSync({ ...basis, store, sem: zonderAdres, cash: cash.client, dryRun: false, relatiesAanmaken: true });
+    expect(r).toMatchObject({ n_geboekt: 0, n_fout: 1 });
+    expect(cash.geboekt).toHaveLength(0);
+    expect(facturen.get("1877")!.foutmelding).toContain("adres");
   });
 });

@@ -54,6 +54,7 @@ export async function startSync(trigger: "cron" | "handmatig") {
     startDate: e.SYNC_START_DATE,
     startFactuurnummer: startFactuurnummerVan(inst),
     cashInstellingen: cashInstellingenVan(e, inst),
+    relatiesAanmaken: inst.relaties_aanmaken === "ja",
     trigger,
   });
 }
@@ -99,6 +100,7 @@ export async function startTestboeking(batchNumber: number, { invoiceId, proef =
     dryRun: proef,
     startDate: "2000-01-01",
     cashInstellingen: cashInstellingenVan(e, inst, { administratie: TEST_ADMINISTRATIE, dagboek }),
+    relatiesAanmaken: inst.relaties_aanmaken === "ja",
     trigger: "test",
   });
 }

@@ -38,4 +38,11 @@ describe("relatieRecord", () => {
     expect(r).not.toHaveProperty("F0104");
     expect(relatieRecord({ RelationID: 3, DebtorNumber: "152501", OrganizationName: "X" })).toBeNull();
   });
+
+  it("haalt het CASH-scheidingsteken weg en slaat lidwoorden over in de zoeknaam", () => {
+    const r = relatieRecord({ RelationID: 4, DebtorNumber: "151997", OrganizationName: "De Haagse Hogeschool | Faculteit Bedrijfskunde", InvoicePostalCode: "2521 EN", InvoiceCity: "'s-Gravenhage" });
+    expect(r?.F0103).toBe("De Haagse Hogeschool - Faculteit Be");
+    expect(r?.F0102).toBe("HAAGSE");
+    expect(Object.values(r ?? {}).some((v) => v.includes("|"))).toBe(false);
+  });
 });

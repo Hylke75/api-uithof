@@ -48,9 +48,13 @@ bepaalt de server (`SYNC_DRY_RUN`). Ontwerp volgens `design-brief/` (tokens in `
 
 | Waar | Wat |
 |---|---|
-| tabel `instellingen` | `cash_dagboek` (VERKS), `cash_gb_debiteuren` (1300, terugval), `start_factuurnummer` (823498), `melding_aan`, `melding_dagelijks_tot` |
+| tabel `instellingen` | `cash_dagboek` (VERKS), `cash_gb_debiteuren` (1300, terugval), `start_factuurnummer` (823498), `relaties_aanmaken` (ja), `melding_aan`, `melding_dagelijks_tot` |
 | `map_btwcode` | SEM-btw-code → CASH-btw-rekening, voor btw zonder aparte btw-regel |
 | `map_grootboek` / `map_debiteur` | Optioneel: afwijkende rekening- of debiteurnummers. Zonder rij 1-op-1 |
+
+**Debiteuren:** een debiteur die nog niet in CASH bestaat, wordt vóór het boeken aangemaakt met de
+klantgegevens uit SEM (`Relations/GetRelation`, `src/lib/cash/relatie.ts`), zoals de boekhouding dat doet.
+Zonder adres in SEM lukt dat niet: dan wordt de factuur niet geboekt (anders zet CASH het bedrag op 9999).
 
 Het live SEM gebruikt al de rekeningnummers van CASH. Kostenplaatsen worden niet meegestuurd: CASH vult ze zelf
 in vanuit de grootboekrekening. Omgevingsvariabelen: zie `.env.example`.
@@ -112,6 +116,7 @@ Testen: `POST /api/cron/testmail` (of `?soort=fout`).
 | `GET /api/cron/diagnose-sem?van=JJJJ-MM-DD[&batch=][&alles=1]` | Alleen lezen: SEM-batches en -journaalposten |
 | `GET /api/cron/diagnose-cash?[admin=][&periode=JJPP\|JJPP&dagboek=&stuk=]` | Alleen lezen: CASH, incl. geboekte regels |
 | `GET /api/cron/vergelijk?batch=[&dagboek=]` | Omzetting naast de boekingen in CASH, per rekening |
+| `POST /api/cron/relaties-aanmaken?batch=&debiteuren=[&proef=1]` | Ontbrekende debiteuren uit SEM in CASH aanmaken |
 | `POST /api/cron/testmail[?soort=fout]` | Voorbeeldmail naar de ingestelde ontvanger |
 | `POST /api/cron/testboeking?batch=[&factuur=][&proef=1][&dagboek=]` | **Alleen demo:** één batch/factuur boeken of proefdraaien |
 | `POST /api/cron/testdata-opruimen?facturen=` | **Alleen demo:** testfacturen uit de database halen |

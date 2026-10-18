@@ -1,5 +1,6 @@
 import { CashAfgewezenError, type CashClient } from "@/lib/cash/client";
 import type { SemClient, SemFactuur } from "@/lib/sem/client";
+import { relatieRecord } from "@/lib/cash/relatie";
 import { bouwFacturen } from "@/lib/sem/facturen";
 import { contentHash } from "./hash";
 import { mapFactuur, totalen, type CashInstellingen, type Mappings } from "./mapping";
@@ -25,6 +26,8 @@ export interface SyncOptions {
    */
   startFactuurnummer?: number;
   cashInstellingen: CashInstellingen;
+  /** Ontbrekende debiteuren met de klantgegevens uit SEM als relatie in CASH aanmaken. */
+  relatiesAanmaken?: boolean;
   trigger: RunTrigger;
   now?: Date;
 }
@@ -167,7 +170,17 @@ async function verwerkFactuur(
     return;
   }
 
-  if (!relaties.has(Number(mapped.boeking.debiteurnummer))) {
+  const debiteur = Number(mapped.boeking.debiteurnummer);
+  if (!relaties.has(debiteur) && !dryRun && ctx.relatiesAanmaken) {
+    const probleem = await maakRelatieAan(ctx, factuur, mapped.boeking.debiteurnummer);
+    if (!probleem) relaties.add(debiteur);
+    else {
+      await store.upsertFactuur({ ...basis, status: "fout", cash_payload: mapped.boeking, foutmelding: probleem });
+      t.n_fout++;
+      return;
+    }
+  }
+  if (!relaties.has(debiteur) && !dryRun) {
     // Niet versturen: CASH zou de omzet boeken en het debiteurbedrag op 9999 zetten.
     await store.upsertFactuur({
       ...basis,
@@ -220,6 +233,21 @@ async function verwerkFactuur(
       });
     }
     t.n_fout++;
+  }
+}
+
+/** Maakt de debiteur aan in CASH met de klantgegevens uit SEM. Geeft een melding terug als dat niet lukt. */
+async function maakRelatieAan(ctx: SyncOptions, factuur: SemFactuur, debiteurnummer: string): Promise<string | null> {
+  const wat = `Debiteur ${debiteurnummer} bestaat nog niet in CASH en kon niet automatisch worden aangemaakt`;
+  if (!factuur.relationId || debiteurnummer !== factuur.debiteurnummer) return `${wat}: geen SEM-klant bij deze factuur. Maak de relatie handmatig aan.`;
+  try {
+    const klant = await ctx.sem.fetchRelatie(factuur.relationId);
+    const record = klant && String(klant.DebtorNumber) === debiteurnummer ? relatieRecord(klant) : null;
+    if (!record) return `${wat}: naam of adres (postcode/plaats) ontbreekt in SEM. Vul de klant aan in SEM; de volgende run probeert het opnieuw.`;
+    await ctx.cash.maakRelatie(ctx.cashInstellingen.administratie, record);
+    return null;
+  } catch (e) {
+    return `${wat}: ${melding(e)}`;
   }
 }
 
