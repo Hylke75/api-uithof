@@ -105,13 +105,19 @@ function semMet(opts: { totaalIn?: number; extra?: Partial<SemJournaalpost>; fac
   return { sem, vensters };
 }
 
-function cashSpy(fout?: Error) {
+function cashSpy(fout?: Error, opties: { relaties?: number[]; deelsGeboekt?: boolean } = {}) {
   const geboekt: CashBoeking[] = [];
   const client: CashClient = {
     async boekFactuur(b) {
       if (fout) throw fout;
       geboekt.push(b);
       return { boekingId: `B${geboekt.length}` };
+    },
+    async relaties() {
+      return new Set(opties.relaties ?? [10001]);
+    },
+    async boekstukBestaat() {
+      return opties.deelsGeboekt ?? false;
     },
   };
   return { client, geboekt };
@@ -286,5 +292,24 @@ describe("runSync", () => {
     expect(r).toMatchObject({ n_overgeslagen: 1, n_geboekt: 0 });
     expect(facturen.has("1877")).toBe(false);
     expect(cash.geboekt).toHaveLength(0);
+  });
+
+  it("boekt niet als de debiteur nog niet in CASH bestaat (anders boekt CASH half)", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    const cash = cashSpy(undefined, { relaties: [99999] });
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: false });
+    expect(r).toMatchObject({ n_geboekt: 0, n_fout: 1 });
+    expect(cash.geboekt).toHaveLength(0);
+    expect(facturen.get("1877")).toMatchObject({ status: "fout" });
+    expect(facturen.get("1877")!.foutmelding).toContain("bestaat nog niet in CASH");
+  });
+
+  it("markeert een deels verwerkte, geweigerde boeking als 'handmatig controleren', niet als fout", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    const cash = cashSpy(new CashAfgewezenError("Ongeldige waarde 0101=10001"), { deelsGeboekt: true });
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: false });
+    expect(r).toMatchObject({ n_geboekt: 0, n_fout: 1 });
+    expect(facturen.get("1877")).toMatchObject({ status: "nieuw" });
+    expect(facturen.get("1877")!.foutmelding).toContain("deels verwerkt");
   });
 });

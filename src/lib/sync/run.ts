@@ -65,6 +65,8 @@ export async function runSync(opts: SyncOptions): Promise<SyncResultaat> {
 
   try {
     const mappings = await store.laadMappings();
+    // Bestaande debiteuren in CASH: een onbekende debiteur laat CASH half boeken (bedrag op 9999).
+    const relaties = await opts.cash.relaties(opts.cashInstellingen.administratie);
     const batches = await sem.fetchBatches(windowFrom);
     if (!dryRun) {
       // Batches die alleen in de proefstand zijn verwerkt (bijv. vóór het live gaan) alsnog boeken,
@@ -93,7 +95,7 @@ export async function runSync(opts: SyncOptions): Promise<SyncResultaat> {
       t.n_opgehaald += facturen.length;
       const bestaand = await store.bestaandeFacturen(facturen.map((f) => f.id));
       for (const factuur of facturen) {
-        await verwerkFactuur(factuur, bestaand.get(factuur.id), { ...opts, mappings, runId, t });
+        await verwerkFactuur(factuur, bestaand.get(factuur.id), { ...opts, mappings, relaties, runId, t });
       }
       await store.upsertBatch({ batch, runId, nFacturen: facturen.length, fout: null });
     }
@@ -111,9 +113,9 @@ export async function runSync(opts: SyncOptions): Promise<SyncResultaat> {
 async function verwerkFactuur(
   factuur: SemFactuur,
   vorigeVersie: { status: FactuurRow["status"]; content_hash: string } | undefined,
-  ctx: SyncOptions & { mappings: Mappings; runId: string; t: RunTellingen },
+  ctx: SyncOptions & { mappings: Mappings; relaties: Set<number>; runId: string; t: RunTellingen },
 ) {
-  const { store, cash, dryRun, startDate, cashInstellingen, mappings, runId, t } = ctx;
+  const { store, cash, dryRun, startDate, cashInstellingen, mappings, relaties, runId, t } = ctx;
 
   const nummer = Number(factuur.factuurnummer);
   const voorOverstap =
@@ -164,6 +166,18 @@ async function verwerkFactuur(
     return;
   }
 
+  if (!relaties.has(Number(mapped.boeking.debiteurnummer))) {
+    // Niet versturen: CASH zou de omzet boeken en het debiteurbedrag op 9999 zetten.
+    await store.upsertFactuur({
+      ...basis,
+      status: "fout",
+      cash_payload: mapped.boeking,
+      foutmelding: `Debiteur ${mapped.boeking.debiteurnummer} bestaat nog niet in CASH (administratie ${cashInstellingen.administratie}). Maak de relatie aan; de volgende run boekt de factuur dan alsnog.`,
+    });
+    t.n_fout++;
+    return;
+  }
+
   if (dryRun) {
     await store.upsertFactuur({ ...basis, status: "proef", cash_payload: mapped.boeking, foutmelding: null });
     t.n_proef++;
@@ -184,9 +198,18 @@ async function verwerkFactuur(
     });
     t.n_geboekt++;
   } catch (e) {
-    if (e instanceof CashAfgewezenError) {
+    // CASH verwerkt soms een deel van een geweigerde import. Staat er iets onder het boekstuk,
+    // dan niet opnieuw proberen maar laten controleren.
+    const deels = e instanceof CashAfgewezenError && (await cash.boekstukBestaat(mapped.boeking).catch(() => true));
+    if (e instanceof CashAfgewezenError && !deels) {
       // CASH heeft niets verwerkt: veilig om de volgende run opnieuw te proberen.
       await store.upsertFactuur({ ...basis, status: "fout", cash_payload: mapped.boeking, foutmelding: `CASH: ${melding(e)}` });
+    } else if (deels) {
+      await store.markeerFactuur(factuur.id, {
+        status: "nieuw",
+        foutmelding: `CASH heeft de boeking maar deels verwerkt (${melding(e)}). Controleer boekstuk ${mapped.boeking.dagboek}/${mapped.boeking.factuurnummer} in CASH en pas daarna de status aan.`,
+        laatste_run_id: runId,
+      });
     } else {
       // Uitkomst onbekend: status blijft "nieuw", zodat de factuur niet dubbel geboekt wordt.
       await store.markeerFactuur(factuur.id, {

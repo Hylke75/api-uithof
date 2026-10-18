@@ -49,6 +49,10 @@ export function btwRegelsVan(b: CashBoeking): { grootboekrekening: string; omsch
 
 export interface CashClient {
   boekFactuur(boeking: CashBoeking): Promise<{ boekingId: string }>;
+  /** Relatienummers (debiteuren) die in de administratie bestaan. */
+  relaties(admin: string): Promise<Set<number>>;
+  /** Staat er al iets onder dit boekstuk in CASH? (CASH verwerkt soms een deel van een geweigerde import.) */
+  boekstukBestaat(boeking: CashBoeking): Promise<boolean>;
 }
 
 /**
@@ -237,6 +241,20 @@ export function createCashClient(config: CashConfig) {
       const r = (body as { R0301?: unknown } | null)?.R0301;
       const lijst = (r == null ? [] : Array.isArray(r) ? r : Object.values(r as object)) as Veld[];
       return lijst.filter((m) => m.F0901 === dagboek && Number(m.F0303) === Number(stuk));
+    },
+
+    async relaties(admin: string): Promise<Set<number>> {
+      const { status, body } = await request(`/get/index/0101?admin=${encodeURIComponent(admin)}`);
+      if (status !== 200) throw new Error(`CASH relaties: HTTP ${status} ${kort(body)}`);
+      const r = (body as { R0101?: unknown } | null)?.R0101;
+      const lijst = (r == null ? [] : Array.isArray(r) ? r : Object.values(r as object)) as Veld[];
+      return new Set(lijst.map((x) => Number(x.F0101)).filter((n) => Number.isFinite(n)));
+    },
+
+    async boekstukBestaat(boeking: CashBoeking): Promise<boolean> {
+      const [van, tot] = periodesRond(boeking.boekdatum);
+      const regels = await this.mutaties(boeking.administratie, van, boeking.dagboek.toUpperCase(), boeking.factuurnummer, tot);
+      return regels.length > 0;
     },
 
     async boekFactuur(boeking: CashBoeking) {
