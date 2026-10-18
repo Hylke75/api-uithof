@@ -56,7 +56,15 @@ export async function POST(req: NextRequest) {
                 ...(!(semRelatie.OrganizationName || semRelatie.LastName) ? ["naam"] : []),
                 ...(!(semRelatie.InvoiceCity || semRelatie.PostalCity) ? ["plaats"] : []),
               ];
-        resultaten.push({ debiteur: deb, uitkomst: `gegevens in SEM onvolledig: ${ontbreekt.join(", ") || "onbekend"}` });
+        // Alleen veldnamen met een waarde (geen inhoud), om te zien waar het adres wel staat.
+        const raw = (semRelatie ?? {}) as unknown as Record<string, unknown>;
+        const gevuld = Object.keys(raw).filter((k) => raw[k] != null && raw[k] !== "" && !(Array.isArray(raw[k]) && (raw[k] as unknown[]).length === 0));
+        const adressen = Array.isArray(raw.Addresses) ? (raw.Addresses as Record<string, unknown>[]) : [];
+        resultaten.push({
+          debiteur: deb,
+          uitkomst: `gegevens in SEM onvolledig: ${ontbreekt.join(", ") || "onbekend"}`,
+          ...(proef ? { velden: gevuld, adressen: adressen.map((a) => Object.keys(a).filter((k) => a[k] != null && a[k] !== "")) } : {}),
+        });
         continue;
       }
       // Alleen naam en plaats tonen; geen contactgegevens in het antwoord.
