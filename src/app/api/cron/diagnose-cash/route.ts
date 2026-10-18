@@ -78,7 +78,12 @@ export async function GET(req: NextRequest) {
       voorbeeld: relRijen.slice(0, 3).map((r) => ({ nr: r.F0101, naam: r.F0103 })),
       gezocht: relaties.map((nr) => ({ nr, gevonden: relRijen.some((r) => Number(r.F0101) === Number(nr)) })),
       // Welke velden zijn bij deze relaties ingevuld (alleen de veldcodes, geen inhoud).
-      ingevuld: relaties.map((nr) => ({ nr, velden: Object.keys(relRijen.find((r) => Number(r.F0101) === Number(nr)) ?? {}).filter((k) => (relRijen.find((r) => Number(r.F0101) === Number(nr)) as Record<string, string>)[k]) })),
+      ingevuld: relaties.map((nr) => {
+        const r = relRijen.find((x) => Number(x.F0101) === Number(nr)) ?? {};
+        // Codes (geen persoonsgegevens) met waarde; overige velden alleen als "ingevuld".
+        const codes = ["F0102", "F0121", "F0122", "F0129", "F0130", "F0111", "F0981", "F0983"];
+        return { nr, velden: Object.keys(r).filter((k) => r[k]), codes: Object.fromEntries(codes.filter((k) => r[k]).map((k) => [k, r[k]])) };
+      }),
       fout: rel.tekst,
     },
   });
