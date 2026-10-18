@@ -53,6 +53,8 @@ export interface CashClient {
   relaties(admin: string): Promise<Set<number>>;
   /** Staat er al iets onder dit boekstuk in CASH? (CASH verwerkt soms een deel van een geweigerde import.) */
   boekstukBestaat(boeking: CashBoeking): Promise<boolean>;
+  /** Maakt een relatie (record 101) aan. */
+  maakRelatie(admin: string, record: Veld): Promise<void>;
 }
 
 /**
@@ -62,7 +64,7 @@ export interface CashClient {
  */
 export class CashAfgewezenError extends Error {}
 
-type Veld = Record<`F${string}`, string>;
+export type Veld = Record<`F${string}`, string>;
 
 /** Bedrag in centen naar CASH-notatie: "1264,50" / "-100,00". */
 export function cashBedrag(cents: number): string {
@@ -255,6 +257,20 @@ export function createCashClient(config: CashConfig) {
       const [van, tot] = periodesRond(boeking.boekdatum);
       const regels = await this.mutaties(boeking.administratie, van, boeking.dagboek.toUpperCase(), boeking.factuurnummer, tot);
       return regels.length > 0;
+    },
+
+    async maakRelatie(admin: string, record: Veld) {
+      const { status, body } = await request("/import", {
+        method: "POST",
+        body: JSON.stringify({ admin, format: 0, content: { cash: [{ R101: [record] }] } }),
+      });
+      if (status === 201 || status === 200) return;
+      if (status === 202) {
+        const id = (body as { transaction?: string } | null)?.transaction;
+        if (id) return wachtOpTransactie(id);
+      }
+      if (status >= 400 && status < 500 && status !== 408) throw new CashAfgewezenError(`Relatie ${record.F0101}: HTTP ${status} ${kort(body)}`);
+      throw new Error(`Relatie ${record.F0101}: HTTP ${status} ${kort(body)}; uitkomst onbekend.`);
     },
 
     async boekFactuur(boeking: CashBoeking) {

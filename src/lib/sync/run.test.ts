@@ -101,6 +101,9 @@ function semMet(opts: { totaalIn?: number; extra?: Partial<SemJournaalpost>; fac
     async fetchFacturen() {
       return [kop];
     },
+    async fetchRelatie(id) {
+      return { RelationID: id, DebtorNumber: "10001", OrganizationName: "Klant BV", InvoicePostalCode: "1234 AB", InvoiceCity: "Utrecht", InvoiceCountryCode: "NL" };
+    },
   };
   return { sem, vensters };
 }
@@ -119,6 +122,7 @@ function cashSpy(fout?: Error, opties: { relaties?: number[]; deelsGeboekt?: boo
     async boekstukBestaat() {
       return opties.deelsGeboekt ?? false;
     },
+    async maakRelatie() {},
   };
   return { client, geboekt };
 }
@@ -311,5 +315,15 @@ describe("runSync", () => {
     expect(r).toMatchObject({ n_geboekt: 0, n_fout: 1 });
     expect(facturen.get("1877")).toMatchObject({ status: "nieuw" });
     expect(facturen.get("1877")!.foutmelding).toContain("deels verwerkt");
+  });
+
+  it("ziet een factuur niet als gewijzigd alleen omdat het SEM-klantnummer erbij komt", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    await runSync({ ...basis, store, sem: semMet().sem, cash: cashSpy().client, dryRun: false });
+    const hashVoor = facturen.get("1877")!.content_hash;
+    const { contentHash } = await import("./hash");
+    const { relationId, ...zonder } = facturen.get("1877")!.sem_payload as Record<string, unknown>;
+    expect(relationId).toBeDefined();
+    expect(contentHash(zonder)).toBe(hashVoor);
   });
 });

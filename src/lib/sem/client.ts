@@ -89,6 +89,8 @@ export interface SemBtwRegel {
 }
 
 export interface SemFactuur {
+  /** SEM-klantnummer (RelationID), om een ontbrekende debiteur in CASH aan te kunnen maken. */
+  relationId?: number | null;
   /** SEM InvoiceID, als string. */
   id: string;
   factuurnummer: string;
@@ -118,12 +120,34 @@ export interface SemFactuur {
   problemen: string[];
 }
 
+/** Klantgegevens uit SEM (Relations/GetRelation), alleen de velden die we gebruiken. */
+export interface SemRelatie {
+  RelationID: number;
+  DebtorNumber: string | null;
+  OrganizationName?: string | null;
+  FirstName?: string | null;
+  Prefix?: string | null;
+  LastName?: string | null;
+  Initials?: string | null;
+  PostalStreetAndNumber?: string | null;
+  PostalPostalCode?: string | null;
+  PostalCity?: string | null;
+  PostalCountryCode?: string | null;
+  InvoiceStreetAndNumber?: string | null;
+  InvoicePostalCode?: string | null;
+  InvoiceCity?: string | null;
+  InvoiceCountryCode?: string | null;
+  EMailAddress?: string | null;
+}
+
 export interface SemClient {
   /** Batches die sinds `fromModifiedAt` (YYYY-MM-DD) zijn aangemaakt of gewijzigd. */
   fetchBatches(fromModifiedAt: string): Promise<SemBatch[]>;
   fetchJournaalposten(batch: Pick<SemBatch, "BatchNumber" | "CompanyCode">): Promise<SemJournaalpost[]>;
   /** Factuurkoppen (zonder regels) van één batch. */
   fetchFacturen(batch: Pick<SemBatch, "BatchNumber" | "CompanyCode">): Promise<SemInvoice[]>;
+  /** Eén klant; null als SEM hem niet kent. */
+  fetchRelatie(relationId: number): Promise<SemRelatie | null>;
 }
 
 export class SemApiError extends Error {
@@ -188,6 +212,11 @@ export function createSemClient(config: { baseUrl: string; apiKey: string; timeo
         InvoiceLoadOptions: { DoLoadInvoiceLines: false },
       });
       return r.Invoices ?? [];
+    },
+
+    async fetchRelatie(relationId) {
+      const r = await call<{ RelationModel?: SemRelatie | null }>("Relations/GetRelation", { RelationID: relationId });
+      return r.RelationModel ?? null;
     },
   };
 }

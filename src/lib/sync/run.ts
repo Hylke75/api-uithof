@@ -129,7 +129,8 @@ async function verwerkFactuur(
     return;
   }
 
-  const hash = contentHash(factuur);
+  // relationId hoort niet bij de inhoud van de factuur (en ontbrak in eerdere versies): buiten de hash.
+  const hash = contentHash({ ...factuur, relationId: undefined });
 
   if (vorigeVersie?.status === "geboekt" || vorigeVersie?.status === "gewijzigd_na_boeking") {
     if (vorigeVersie.status === "geboekt" && vorigeVersie.content_hash !== hash) {

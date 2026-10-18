@@ -181,6 +181,7 @@ export function bouwFacturen(
       factuurdatum,
       soort: (totaalInclCents ?? somIncl) < 0 ? "creditnota" : "factuur",
       debiteurnummer,
+      relationId: kop?.RelationID ?? eerste.RelationID ?? null,
       btwRegels,
       debiteurTotaalCents,
       debiteurGrootboek: debiteurPost ? tekst(debiteurPost.AccountCode) : null,

@@ -90,6 +90,7 @@ export async function startTestboeking(batchNumber: number, { invoiceId, proef =
     async fetchFacturen(b) {
       return (await echt.fetchFacturen(b)).filter((f) => invoiceId == null || f.InvoiceID === invoiceId);
     },
+    fetchRelatie: (id) => echt.fetchRelatie(id),
   };
   return runSync({
     store: supabaseStore(db()),
