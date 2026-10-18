@@ -46,7 +46,17 @@ export async function POST(req: NextRequest) {
       const semRelatie = relationId ? await sem.fetchRelatie(relationId) : null;
       const record = semRelatie && String(semRelatie.DebtorNumber) === deb ? relatieRecord(semRelatie) : null;
       if (!record) {
-        resultaten.push({ debiteur: deb, uitkomst: relationId ? "gegevens in SEM onvolledig" : "niet gevonden in batch" });
+        // Welke verplichte gegevens ontbreken (zonder de inhoud te tonen).
+        const ontbreekt = !relationId
+          ? ["niet gevonden in batch"]
+          : !semRelatie
+            ? ["klant niet gevonden in SEM"]
+            : [
+                ...(String(semRelatie.DebtorNumber) !== deb ? [`ander debiteurnummer in SEM (${semRelatie.DebtorNumber})`] : []),
+                ...(!(semRelatie.OrganizationName || semRelatie.LastName) ? ["naam"] : []),
+                ...(!(semRelatie.InvoiceCity || semRelatie.PostalCity) ? ["plaats"] : []),
+              ];
+        resultaten.push({ debiteur: deb, uitkomst: `gegevens in SEM onvolledig: ${ontbreekt.join(", ") || "onbekend"}` });
         continue;
       }
       // Alleen naam en plaats tonen; geen contactgegevens in het antwoord.
