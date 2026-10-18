@@ -59,6 +59,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ?relatie=<RelationID>: één klant uit SEM ophalen (alleen lezen), om relaties in CASH aan te maken.
+  const relatie = req.nextUrl.searchParams.get("relatie");
+  if (relatie != null) {
+    if (!/^\d{1,9}$/.test(relatie)) return NextResponse.json({ error: "relatie moet een nummer zijn" }, { status: 400 });
+    const r = await post("Relations/GetRelation", { RelationID: Number(relatie) });
+    return NextResponse.json({ semUrl: base, resultaten: [r] });
+  }
+
   const proeven = [post("JournalEntryBatches/GetJournalEntryBatches", { JournalEntryBatchFilter: { FromModifiedAt: `${van}T00:00` } })];
   if (batch) {
     proeven.push(post("JournalEntries/GetJournalEntries", { JournalEntryFilter: { BatchNumber: batch } }));
