@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   const key = leesEnv("CASH_API_KEY") ?? "";
   // Alleen lezen: ?admin= kijkt in een andere administratie (bijv. spo1 vóór het live gaan).
   const adminParam = req.nextUrl.searchParams.get("admin");
-  if (adminParam && !/^[a-z0-9]{1,8}$/i.test(adminParam)) return NextResponse.json({ error: "ongeldige administratie" }, { status: 400 });
+  if (adminParam && !/^([a-z0-9_-]{1,32}\/)?[a-z0-9]{1,8}$/i.test(adminParam)) return NextResponse.json({ error: "ongeldige administratie" }, { status: 400 });
   const admin = adminParam || (leesEnv("CASH_ADMINISTRATIE") ?? "");
   const relaties = (req.nextUrl.searchParams.get("relaties") ?? "").split(",").filter(Boolean);
   // Optioneel: grootboekmutaties (record 301) van een periode JJPP|JJPP, gefilterd op dagboek/stuknummer.
@@ -46,7 +46,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const q = `?admin=${encodeURIComponent(admin)}`;
+  const admdir = req.nextUrl.searchParams.get("admdir");
+  if (admdir && !/^[a-z0-9_-]{1,32}\/?$/i.test(admdir)) return NextResponse.json({ error: "ongeldige map" }, { status: 400 });
+  const q = `?admin=${encodeURIComponent(admin)}${admdir ? `&admdir=${encodeURIComponent(admdir)}` : ""}`;
   const [adm, dag, gb, rel] = await Promise.all([get("/administrations"), get(`/get/index/0901${q}`), get(`/get/index/0201${q}`), get(`/get/index/0101${q}`)]);
   const admJson = adm.json as { Dir?: { Name?: string; Adms?: { Adm?: unknown } } } | null;
   const relRijen = rijen((rel.json as { R0101?: unknown } | null)?.R0101);
@@ -68,7 +70,7 @@ export async function GET(req: NextRequest) {
     // CASH_DAGBOEK gaat voor de instelling cash_dagboek in de database.
     dagboekOmgeving: leesEnv("CASH_DAGBOEK") ?? null,
     mutaties,
-    administraties: { http: adm.http, relatie: admJson?.Dir?.Name, lijst: rijen(admJson?.Dir?.Adms?.Adm).map((a) => ({ code: a.Code, naam: a.Name, readOnly: a.ReadOnly })), fout: adm.tekst },
+    administraties: { http: adm.http, relatie: admJson?.Dir?.Name, lijst: rijen(admJson?.Dir?.Adms?.Adm).map((a) => ({ code: a.Code, naam: a.Name, readOnly: a.ReadOnly, map: a.dirname, basis: a.basename })), ruw: req.nextUrl.searchParams.has("ruw") ? admJson : undefined, fout: adm.tekst },
     dagboeken: { http: dag.http, lijst: rijen((dag.json as { R0901?: unknown } | null)?.R0901), fout: dag.tekst },
     grootboek: { http: gb.http, lijst: rijen((gb.json as { R0201?: unknown } | null)?.R0201).map((r) => ({ rek: r.F0201, oms: r.F0203, soort: r.F0204, ob: r.F0242 })), fout: gb.tekst },
     relaties: {
