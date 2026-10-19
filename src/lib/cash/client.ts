@@ -225,6 +225,22 @@ export function createCashClient(config: CashConfig) {
 
   const kort = (body: unknown) => (typeof body === "string" ? body : JSON.stringify(body)).slice(0, 500);
 
+  /**
+   * Leest een index (bijv. R0301). CASH geeft soms een leeg antwoord (HTTP 200 zonder records) waar
+   * wel gegevens zijn; dan nog twee keer proberen voordat leeg als leeg geldt.
+   */
+  async function leesIndex(pad: string, record: string): Promise<Veld[]> {
+    const pogingen = 3;
+    for (let i = 1; ; i++) {
+      const { status, body } = await request(pad);
+      if (status !== 200) throw new CashAfgewezenError(`CASH ${record}: HTTP ${status} ${kort(body)}`);
+      const r = (body as Record<string, unknown> | null)?.[record];
+      const lijst = (r == null ? [] : Array.isArray(r) ? r : Object.values(r as object)) as Veld[];
+      if (lijst.length > 0 || i >= pogingen) return lijst;
+      await new Promise((res) => setTimeout(res, config.pendingWachtMs ?? 3_000));
+    }
+  }
+
   async function wachtOpTransactie(id: string): Promise<void> {
     const pogingen = config.pendingPogingen ?? 5;
     for (let i = 0; i < pogingen; i++) {
@@ -245,10 +261,7 @@ export function createCashClient(config: CashConfig) {
     /** Alle grootboekmutaties (record 301) in de boekperiodes JJPP t/m JJPP. */
     async periodeMutaties(admin: string, periode: string, totPeriode = periode): Promise<Veld[]> {
       const q = `?admin=${encodeURIComponent(admin)}&params=${encodeURIComponent(`${periode}|${totPeriode}`)}`;
-      const { status, body } = await request(`/get/index/301T${q}`);
-      if (status !== 200) throw new CashAfgewezenError(`CASH 301T: HTTP ${status} ${kort(body)}`);
-      const r = (body as { R0301?: unknown } | null)?.R0301;
-      return (r == null ? [] : Array.isArray(r) ? r : Object.values(r as object)) as Veld[];
+      return leesIndex(`/get/index/301T${q}`, "R0301");
     },
 
     /** Grootboekmutaties van één dagboek en stuknummer in de boekperiodes JJPP t/m JJPP. */
@@ -257,10 +270,9 @@ export function createCashClient(config: CashConfig) {
     },
 
     async relaties(admin: string): Promise<Set<number>> {
-      const { status, body } = await request(`/get/index/0101?admin=${encodeURIComponent(admin)}`);
-      if (status !== 200) throw new Error(`CASH relaties: HTTP ${status} ${kort(body)}`);
-      const r = (body as { R0101?: unknown } | null)?.R0101;
-      const lijst = (r == null ? [] : Array.isArray(r) ? r : Object.values(r as object)) as Veld[];
+      const lijst = await leesIndex(`/get/index/0101?admin=${encodeURIComponent(admin)}`, "R0101");
+      // Een administratie zonder relaties bestaat niet: leeg betekent dat CASH niet (volledig) antwoordde.
+      if (lijst.length === 0) throw new Error("CASH relaties: lege lijst ontvangen; uitkomst onbetrouwbaar.");
       return new Set(lijst.map((x) => Number(x.F0101)).filter((n) => Number.isFinite(n)));
     },
 

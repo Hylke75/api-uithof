@@ -108,6 +108,13 @@ function mockFetch(...antwoorden: [number, unknown][]) {
 const client = () => createCashClient({ baseUrl: "https://www.cashweb.nl/api/4.0", apiKey: "sleutel", pendingWachtMs: 1, pendingPogingen: 2 });
 
 describe("createCashClient", () => {
+  it("probeert opnieuw bij een leeg antwoord, en vertrouwt een lege relatielijst nooit", async () => {
+    mockFetch([200, {}], [200, { R0301: { "0": { F0901: "VERKS", F0303: "823505" } } }]);
+    await expect(client().mutaties("spo1", "2609", "VERKS", "823505", "2611")).resolves.toHaveLength(1);
+    mockFetch([200, {}], [200, {}], [200, {}]);
+    await expect(client().relaties("spo1")).rejects.toThrow(/lege lijst/);
+  });
+
   it("weigert als CASH een onbekende administratie gewoon gegevens laat zien", async () => {
     mockFetch([200, { R0901: { "0": { F0901: "VERKS" } } }]);
     await expect(client().controleerAdministratie("spo1")).rejects.toThrow(/negeert de administratiecode/);
@@ -180,11 +187,11 @@ describe("createCashClient", () => {
       .fn()
       .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "https://evil.example.com/x" } }))
       .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "https://x.blob.core.windows.net/a" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ R0301: [] }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ R0301: [{ F0901: "VERKS", F0303: "000001" }] }), { status: 200 }));
     vi.stubGlobal("fetch", fetch);
     await expect(client().mutaties("demo", "2607", "VERKS", "1")).rejects.toBeInstanceOf(CashAfgewezenError);
     expect(fetch).toHaveBeenCalledTimes(1);
-    await expect(client().mutaties("demo", "2607", "VERKS", "1")).resolves.toEqual([]);
+    await expect(client().mutaties("demo", "2607", "VERKS", "1")).resolves.toHaveLength(1);
     const tweede = fetch.mock.calls[2] as unknown as [URL, RequestInit];
     expect(String(tweede[0])).toBe("https://x.blob.core.windows.net/a");
     expect(tweede[1].headers).toBeUndefined();
