@@ -199,7 +199,7 @@ export function createCashClient(config: CashConfig) {
       ...init,
       headers: { ...HEADERS, Authorization: config.apiKey },
       redirect: "manual",
-      signal: AbortSignal.timeout(config.timeoutMs ?? 60_000),
+      signal: init.signal ?? AbortSignal.timeout(config.timeoutMs ?? 60_000),
     });
     // CASH verwijst grote antwoorden door naar externe opslag (Azure); die weigert onze sleutel.
     // Alleen bij lezen (GET) volgen, alleen via https naar CASH of Azure-opslag, en zonder sleutel.
@@ -268,7 +268,15 @@ export function createCashClient(config: CashConfig) {
     async controleerAdministratie(admin: string) {
       // Een niet-bestaande code hoort geen dagboeken op te leveren. Krijgen we die wel, dan negeert CASH de
       // code en zou er in de standaardadministratie van de API-gebruiker geboekt worden (zo kwam spo1 in demo).
-      const { status, body } = await request(`/get/index/0901?admin=${encodeURIComponent(NEP_ADMINISTRATIE)}`);
+      // CASH laat een onbekende code soms hangen: geen antwoord betekent ook geen gegevens.
+      const antwoord = await request(`/get/index/0901?admin=${encodeURIComponent(NEP_ADMINISTRATIE)}`, { signal: AbortSignal.timeout(20_000) }).catch(
+        (e: unknown) => {
+          if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return null;
+          throw e;
+        },
+      );
+      if (!antwoord) return;
+      const { status, body } = antwoord;
       const r = (body as { R0901?: unknown } | null)?.R0901;
       const aantal = r == null ? 0 : Array.isArray(r) ? r.length : Object.keys(r as object).length;
       if (status === 200 && aantal > 0) {

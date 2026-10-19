@@ -108,6 +108,15 @@ function mockFetch(...antwoorden: [number, unknown][]) {
 const client = () => createCashClient({ baseUrl: "https://www.cashweb.nl/api/4.0", apiKey: "sleutel", pendingWachtMs: 1, pendingPogingen: 2 });
 
 describe("createCashClient", () => {
+  it("weigert als CASH een onbekende administratie gewoon gegevens laat zien", async () => {
+    mockFetch([200, { R0901: { "0": { F0901: "VERKS" } } }]);
+    await expect(client().controleerAdministratie("spo1")).rejects.toThrow(/negeert de administratiecode/);
+    mockFetch([200, {}]);
+    await expect(client().controleerAdministratie("spo1")).resolves.toBeUndefined();
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new DOMException("time-out", "TimeoutError"))));
+    await expect(client().controleerAdministratie("spo1")).resolves.toBeUndefined();
+  });
+
   it("importeert met de juiste headers en body", async () => {
     const fetch = mockFetch([201, null]);
     const r = await client().boekFactuur(boeking);
