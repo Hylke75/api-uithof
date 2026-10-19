@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { weigerZonderCronGeheim } from "@/lib/auth";
-import { createCashClient, type CashBoeking } from "@/lib/cash/client";
+import { createCashClient, periodesRond, type CashBoeking } from "@/lib/cash/client";
 import { redigeer } from "@/lib/dashboard/resultaat";
 import { env } from "@/lib/env";
 import { db } from "@/lib/supabase";
@@ -35,6 +35,8 @@ export async function POST(req: NextRequest) {
     const { data, error } = await sb.from("sem_facturen").select("sem_factuur_id, factuurnummer, status, cash_payload").in("factuurnummer", nummers);
     if (error) throw new Error(error.message);
 
+    // Proef: hoeveel regels CASH per periode teruggeeft, om onvolledige antwoorden te herkennen.
+    const controle: Record<string, { regels: number; stukken: number }> = {};
     const resultaten = [];
     for (const f of data ?? []) {
       const boeking = f.cash_payload as CashBoeking | null;
@@ -43,6 +45,13 @@ export async function POST(req: NextRequest) {
         continue;
       }
       const inCash = await cash.boekstukBestaat({ ...boeking, administratie: e.CASH_ADMINISTRATIE });
+      if (proef) {
+        const [van, tot] = periodesRond(boeking.boekdatum);
+        if (!controle[`${van}|${tot}`]) {
+          const regels = (await cash.periodeMutaties(e.CASH_ADMINISTRATIE, van, tot)).filter((m) => m.F0901 === boeking.dagboek.toUpperCase());
+          controle[`${van}|${tot}`] = { regels: regels.length, stukken: new Set(regels.map((m) => m.F0303)).size };
+        }
+      }
       const patch = inCash
         ? { status: "geboekt", cash_boeking_id: `${boeking.dagboek}/${f.factuurnummer}`, foutmelding: `Staat in CASH (${e.CASH_ADMINISTRATIE}); vastgesteld bij afstemmen.` }
         : { status: "fout", cash_boeking_id: null, foutmelding: `Niet gevonden in CASH (${e.CASH_ADMINISTRATIE}); wordt bij de volgende sync opnieuw geboekt.` };
@@ -52,7 +61,7 @@ export async function POST(req: NextRequest) {
       }
       resultaten.push({ factuur: f.factuurnummer, was: f.status, inCash, wordt: patch.status });
     }
-    return NextResponse.json({ administratie: e.CASH_ADMINISTRATIE, proef, onbekend: nummers.filter((n) => !data?.some((f) => f.factuurnummer === n)), resultaten });
+    return NextResponse.json({ administratie: e.CASH_ADMINISTRATIE, proef, controle: proef ? controle : undefined, onbekend: nummers.filter((n) => !data?.some((f) => f.factuurnummer === n)), resultaten });
   } catch (err) {
     return NextResponse.json({ error: redigeer(err instanceof Error ? err.message : String(err)) }, { status: 500 });
   }

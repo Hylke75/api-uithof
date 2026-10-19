@@ -242,13 +242,18 @@ export function createCashClient(config: CashConfig) {
 
   return {
     /** Grootboekmutaties (record 301) van één dagboek en stuknummer in een periode JJPP. */
-    async mutaties(admin: string, periode: string, dagboek: string, stuk: string, totPeriode = periode): Promise<Veld[]> {
+    /** Alle grootboekmutaties (record 301) in de boekperiodes JJPP t/m JJPP. */
+    async periodeMutaties(admin: string, periode: string, totPeriode = periode): Promise<Veld[]> {
       const q = `?admin=${encodeURIComponent(admin)}&params=${encodeURIComponent(`${periode}|${totPeriode}`)}`;
       const { status, body } = await request(`/get/index/301T${q}`);
       if (status !== 200) throw new CashAfgewezenError(`CASH 301T: HTTP ${status} ${kort(body)}`);
       const r = (body as { R0301?: unknown } | null)?.R0301;
-      const lijst = (r == null ? [] : Array.isArray(r) ? r : Object.values(r as object)) as Veld[];
-      return lijst.filter((m) => m.F0901 === dagboek && Number(m.F0303) === Number(stuk));
+      return (r == null ? [] : Array.isArray(r) ? r : Object.values(r as object)) as Veld[];
+    },
+
+    /** Grootboekmutaties van één dagboek en stuknummer in de boekperiodes JJPP t/m JJPP. */
+    async mutaties(admin: string, periode: string, dagboek: string, stuk: string, totPeriode = periode): Promise<Veld[]> {
+      return (await this.periodeMutaties(admin, periode, totPeriode)).filter((m) => m.F0901 === dagboek && Number(m.F0303) === Number(stuk));
     },
 
     async relaties(admin: string): Promise<Set<number>> {
