@@ -67,6 +67,8 @@ export async function runSync(opts: SyncOptions): Promise<SyncResultaat> {
   const meldingen: string[] = [];
 
   try {
+    // Live: eerst zeker weten dat CASH in de gevraagde administratie boekt en niet in de standaard.
+    if (!dryRun) await opts.cash.controleerAdministratie(opts.cashInstellingen.administratie);
     const mappings = await store.laadMappings();
     // Bestaande debiteuren in CASH: een onbekende debiteur laat CASH half boeken (bedrag op 9999).
     const relaties = await opts.cash.relaties(opts.cashInstellingen.administratie);

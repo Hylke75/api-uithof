@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
   const sem = createSemClient({ baseUrl: e.SEM_BASE_URL, apiKey: e.SEM_API_KEY });
   const cash = createCashClient({ baseUrl: e.CASH_BASE_URL, apiKey: e.CASH_API_KEY });
   try {
+    if (!proef && admin !== TEST_ADMINISTRATIE) await cash.controleerAdministratie(admin);
     const koppen = await sem.fetchFacturen({ BatchNumber: batch, CompanyCode: null });
     const relationIds = new Map(koppen.filter((k) => k.DebtorNumber && k.RelationID).map((k) => [String(k.DebtorNumber), k.RelationID!]));
     const bestaand = await cash.relaties(admin);

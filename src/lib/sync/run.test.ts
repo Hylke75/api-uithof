@@ -108,7 +108,7 @@ function semMet(opts: { totaalIn?: number; extra?: Partial<SemJournaalpost>; fac
   return { sem, vensters };
 }
 
-function cashSpy(fout?: Error, opties: { relaties?: number[]; deelsGeboekt?: boolean } = {}) {
+function cashSpy(fout?: Error, opties: { relaties?: number[]; deelsGeboekt?: boolean; adminGenegeerd?: boolean } = {}) {
   const geboekt: CashBoeking[] = [];
   const aangemaakt: Record<string, string>[] = [];
   const client: CashClient = {
@@ -125,6 +125,9 @@ function cashSpy(fout?: Error, opties: { relaties?: number[]; deelsGeboekt?: boo
     },
     async maakRelatie(_admin, record) {
       aangemaakt.push(record);
+    },
+    async controleerAdministratie() {
+      if (opties.adminGenegeerd) throw new Error("CASH negeert de administratiecode");
     },
   };
   return { client, geboekt, aangemaakt };
@@ -160,6 +163,16 @@ describe("runSync", () => {
     const { store, facturen } = memoryStore(mappings);
     await runSync({ ...basis, store, sem: semMet({ debiteurRekening: "1320" }).sem, cash: cashSpy().client, dryRun: true });
     expect((facturen.get("1877")!.cash_payload as CashBoeking).debiteurenGrootboek).toBe("1320");
+  });
+
+  it("boekt niets als CASH de administratiecode negeert", async () => {
+    const { store, facturen } = memoryStore(mappings);
+    const cash = cashSpy(undefined, { adminGenegeerd: true });
+    const r = await runSync({ ...basis, store, sem: semMet().sem, cash: cash.client, dryRun: false });
+    expect(r.status).toBe("failed");
+    expect(r.error).toMatch(/negeert de administratiecode/);
+    expect(cash.geboekt).toHaveLength(0);
+    expect(facturen.size).toBe(0);
   });
 
   it("boekt live en boekt een geboekte factuur nooit opnieuw", async () => {

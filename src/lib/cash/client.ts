@@ -55,6 +55,8 @@ export interface CashClient {
   boekstukBestaat(boeking: CashBoeking): Promise<boolean>;
   /** Maakt een relatie (record 101) aan. */
   maakRelatie(admin: string, record: Veld): Promise<void>;
+  /** Gooit als CASH de administratiecode negeert (dan komt alles in de standaardadministratie terecht). */
+  controleerAdministratie(admin: string): Promise<void>;
 }
 
 /**
@@ -179,6 +181,9 @@ export interface CashConfig {
   pendingWachtMs?: number;
 }
 
+/** Code die geen administratie is; gebruikt om te controleren dat CASH de administratiecode echt gebruikt. */
+const NEP_ADMINISTRATIE = "zq9x";
+
 /** Hosts waarnaar CASH een leesverzoek mag doorverwijzen. */
 function toegestaneDoorverwijzing(url: URL): boolean {
   if (url.protocol !== "https:") return false;
@@ -258,6 +263,20 @@ export function createCashClient(config: CashConfig) {
       const [van, tot] = periodesRond(boeking.boekdatum);
       const regels = await this.mutaties(boeking.administratie, van, boeking.dagboek.toUpperCase(), boeking.factuurnummer, tot);
       return regels.length > 0;
+    },
+
+    async controleerAdministratie(admin: string) {
+      // Een niet-bestaande code hoort geen dagboeken op te leveren. Krijgen we die wel, dan negeert CASH de
+      // code en zou er in de standaardadministratie van de API-gebruiker geboekt worden (zo kwam spo1 in demo).
+      const { status, body } = await request(`/get/index/0901?admin=${encodeURIComponent(NEP_ADMINISTRATIE)}`);
+      const r = (body as { R0901?: unknown } | null)?.R0901;
+      const aantal = r == null ? 0 : Array.isArray(r) ? r.length : Object.keys(r as object).length;
+      if (status === 200 && aantal > 0) {
+        throw new Error(
+          `CASH negeert de administratiecode: een niet-bestaande administratie geeft gewoon gegevens terug. ` +
+            `Boekingen voor ${admin} zouden in de standaardadministratie van de API-gebruiker terechtkomen; er is niets geboekt.`,
+        );
+      }
     },
 
     async maakRelatie(admin: string, record: Veld) {

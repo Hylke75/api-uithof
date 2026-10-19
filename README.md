@@ -127,6 +127,9 @@ Testen: `POST /api/cron/testmail` (of `?soort=fout`).
   meldingen (ze worden gemaskeerd).
 - Beheerpagina achter HTTP Basic Auth; beheer-routes achter `CRON_SECRET` (faalt dicht als dat ontbreekt).
 - Echt boeken buiten `demo` vereist `CASH_LIVE_ADMINISTRATIE` gelijk aan `CASH_ADMINISTRATIE`.
+- Vóór elke live run controleert de sync dat CASH de administratiecode echt gebruikt: geeft een niet-bestaande
+  administratie gewoon gegevens terug, dan negeert CASH de code (en zou alles in de standaardadministratie van de
+  API-gebruiker belanden). De run stopt dan zonder te boeken, met een foutmail.
 - Supabase: RLS aan zonder policies; alleen de server (service role key) heeft toegang.
 
 ## Live zetten
