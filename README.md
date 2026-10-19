@@ -117,6 +117,7 @@ Testen: `POST /api/cron/testmail` (of `?soort=fout`).
 | `GET /api/cron/diagnose-cash?[admin=][&periode=JJPP\|JJPP&dagboek=&stuk=]` | Alleen lezen: CASH, incl. geboekte regels |
 | `GET /api/cron/vergelijk?batch=[&dagboek=]` | Omzetting naast de boekingen in CASH, per rekening |
 | `POST /api/cron/relaties-aanmaken?batch=&debiteuren=[&proef=1]` | Ontbrekende debiteuren uit SEM in CASH aanmaken |
+| `POST /api/cron/afstemmen?facturen=[&proef=1]` | Status gelijkzetten met CASH: aanwezig wordt `geboekt`, ontbrekend wordt `fout` (opnieuw boeken) |
 | `POST /api/cron/testmail[?soort=fout]` | Voorbeeldmail naar de ingestelde ontvanger |
 | `POST /api/cron/testboeking?batch=[&factuur=][&proef=1][&dagboek=]` | **Alleen demo:** één batch/factuur boeken of proefdraaien |
 | `POST /api/cron/testdata-opruimen?facturen=` | **Alleen demo:** testfacturen uit de database halen |
