@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const vorm = (naam: string) => {
     const v = leesEnv(naam);
     if (!v) return null;
-    const soort = v.startsWith("sb_secret_") ? "sb_secret" : v.startsWith("sb_publishable_") ? "sb_publishable" : v.startsWith("eyJ") ? "jwt" : /^[0-9a-f-]{36}$/i.test(v) ? "guid" : "anders";
+    const soort = v.startsWith("sb_secret_") ? "sb_secret" : v.startsWith("sb_publishable_") ? "sb_publishable" : v.startsWith("re_") ? "resend" : v.startsWith("eyJ") ? "jwt" : /^[0-9a-f-]{36}$/i.test(v) ? "guid" : "anders";
     return { lengte: v.length, soort };
   };
 
@@ -38,5 +38,9 @@ export async function GET(req: NextRequest) {
     SYNC_DRY_RUN: leesEnv("SYNC_DRY_RUN") ?? null,
     SYNC_START_DATE: leesEnv("SYNC_START_DATE") ?? null,
     SYNC_START_FACTUUR: leesEnv("SYNC_START_FACTUUR") ?? null,
+    RESEND_API_KEY: vorm("RESEND_API_KEY"),
+    // Alleen namen, om een tikfout of een variabele op de verkeerde omgeving te herkennen.
+    mailVariabelen: Object.keys(process.env).filter((k) => /resend|mail/i.test(k)),
+    omgeving: process.env.VERCEL_ENV ?? null,
   });
 }
